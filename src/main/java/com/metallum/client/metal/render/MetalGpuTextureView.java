@@ -14,7 +14,6 @@ final class MetalGpuTextureView extends GpuTextureView {
     private boolean closed;
     @Nullable
     private MemorySegment nativeHandle;
-    private boolean ownsNativeHandle;
 
     MetalGpuTextureView(final GpuTexture texture, final int baseMipLevel, final int mipLevels) {
         super(texture, baseMipLevel, mipLevels);
@@ -42,7 +41,6 @@ final class MetalGpuTextureView extends GpuTextureView {
                 );
             }
             this.nativeHandle = viewHandle;
-            this.ownsNativeHandle = true;
         }
         return this.nativeHandle;
     }
@@ -52,12 +50,10 @@ final class MetalGpuTextureView extends GpuTextureView {
         if (this.closed) {
             return;
         }
-        if (this.ownsNativeHandle && this.nativeHandle != null) {
+        if (this.nativeHandle != null) {
             MemorySegment handle = this.nativeHandle;
-            MetalGpuTexture texture = (MetalGpuTexture) this.texture();
             this.nativeHandle = null;
-            this.ownsNativeHandle = false;
-            texture.queueNativeRelease(handle);
+            ((MetalGpuTexture) this.texture()).queueNativeRelease(handle);
         }
         this.closed = true;
         ((MetalGpuTexture) this.texture()).removeView();

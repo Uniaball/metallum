@@ -58,10 +58,6 @@ final class MetalGpuTexture extends GpuTexture {
         return this.nativeHandle;
     }
 
-    MetalDevice device() {
-        return this.device;
-    }
-
     void queueNativeRelease(final MemorySegment handle) {
         this.device.queueResourceRelease(handle);
     }

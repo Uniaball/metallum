@@ -257,12 +257,12 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline {
                 this.vertexBindingStepRates,
                 this.vertexBindingBufferSlots.length,
                 blendFunction.isPresent() ? 1 : 0,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendFactorCode(blendFunction.get().color().sourceFactor()) : 0L,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendFactorCode(blendFunction.get().color().destFactor()) : 0L,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendOpCode(blendFunction.get().color().op()) : 0L,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendFactorCode(blendFunction.get().alpha().sourceFactor()) : 0L,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendFactorCode(blendFunction.get().alpha().destFactor()) : 0L,
-                blendFunction.isPresent() ? MetalPipelineSupport.toBlendOpCode(blendFunction.get().alpha().op()) : 0L,
+                blendFunction.map(function -> MetalPipelineSupport.toBlendFactorCode(function.color().sourceFactor())).orElse(0L),
+                blendFunction.map(value -> MetalPipelineSupport.toBlendFactorCode(value.color().destFactor())).orElse(0L),
+                blendFunction.map(blendFunction1 -> MetalPipelineSupport.toBlendOpCode(blendFunction1.color().op())).orElse(0L),
+                blendFunction.map(blendFunction2 -> MetalPipelineSupport.toBlendFactorCode(blendFunction2.alpha().sourceFactor())).orElse(0L),
+                blendFunction.map(blendFunction3 -> MetalPipelineSupport.toBlendFactorCode(blendFunction3.alpha().destFactor())).orElse(0L),
+                blendFunction.map(blendFunction4 -> MetalPipelineSupport.toBlendOpCode(blendFunction4.alpha().op())).orElse(0L),
                 colorTarget.writeMask()
         );
         if (MetalProbe.isNullHandle(created)) {

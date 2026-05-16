@@ -73,7 +73,7 @@ final class MetalSurface implements GpuSurfaceBackend {
             throw new IllegalStateException("Metal surface has no acquired drawable");
         }
 
-        metalEncoder.flushPendingTextureViewClear(textureView);
+        metalEncoder.flushPendingClear(MetalCommandEncoder.castTexture(textureView.texture()));
         metalEncoder.submitRenderPass();
         metalEncoder.endBlitEncoder();
         metalEncoder.endRenderEncoder();

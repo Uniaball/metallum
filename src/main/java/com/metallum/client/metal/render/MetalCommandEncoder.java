@@ -2,6 +2,7 @@ package com.metallum.client.metal.render;
 
 import com.metallum.client.metal.render.bridge.MetalNativeBridge;
 import com.metallum.client.metal.render.mtl.MTLCommandBuffer;
+import com.metallum.client.metal.render.mtl.MTLRenderCommandEncoder;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.GpuFence;
@@ -11,6 +12,7 @@ import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import org.joml.Vector4f;
 import org.joml.Vector4fc;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -28,24 +30,18 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     long currentSubmitIndex = MAX_SUBMITS_IN_FLIGHT;
     private long completedSubmitIndex = 0L;
     private final MetalDestructionQueue destroyQueue = new MetalDestructionQueue(MAX_SUBMITS_IN_FLIGHT + 1);
-    private final Map<MetalGpuTexture, PendingTextureClear> pendingTextureClears = new IdentityHashMap<>();
+    private final Map<MetalGpuTexture, Vector4fc> pendingColorClears = new IdentityHashMap<>();
+    private final Map<MetalGpuTexture, Double> pendingDepthClears = new IdentityHashMap<>();
     private final Map<Long, MTLCommandBuffer> inFlightCommandBuffers = new java.util.HashMap<>();
     @Nullable
     private MetalRenderPass currentRenderPass;
     @Nullable
     MTLCommandBuffer commandBuffer;
     private MemorySegment blitEncoder = MemorySegment.NULL;
-    private MemorySegment renderEncoder = MemorySegment.NULL;
+    @Nullable
+    private MTLRenderCommandEncoder renderEncoder;
     private MemorySegment renderColorAttachment = MemorySegment.NULL;
     private MemorySegment renderDepthAttachment = MemorySegment.NULL;
-
-    record ClearColor(float red, float green, float blue, float alpha) {
-        static final ClearColor TRANSPARENT = new ClearColor(0.0F, 0.0F, 0.0F, 0.0F);
-
-        static ClearColor copy(final Vector4fc color) {
-            return new ClearColor(color.x(), color.y(), color.z(), color.w());
-        }
-    }
 
     MetalCommandEncoder(final MetalDevice device) {
         this.device = device;
@@ -97,41 +93,43 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         destroyQueue.rotate();
     }
 
-    MemorySegment renderCommandEncoder(
+    MTLRenderCommandEncoder renderCommandEncoder(
             final MetalGpuTextureView colorTextureView,
             @Nullable final MetalGpuTextureView depthTextureView,
             final int viewportWidth,
             final int viewportHeight,
-            final Optional<ClearColor> clearColor,
-            final OptionalDouble clearDepth
+            final boolean clearColorEnabled,
+            final float clearColorRed,
+            final float clearColorGreen,
+            final float clearColorBlue,
+            final float clearColorAlpha,
+            final boolean clearDepthEnabled,
+            final double clearDepthValue
     ) {
         endBlitEncoder();
         MemorySegment colorAttachment = colorTextureView.nativeHandle();
         MemorySegment depthAttachment = depthTextureView == null ? MemorySegment.NULL : depthTextureView.nativeHandle();
-        if (clearColor.isEmpty()
-                && clearDepth.isEmpty()
-                && !MetalProbe.isNullHandle(renderEncoder)
+        if (renderEncoder != null
                 && MetalPipelineSupport.sameHandle(renderColorAttachment, colorAttachment)
                 && MetalPipelineSupport.sameHandle(renderDepthAttachment, depthAttachment)) {
             return renderEncoder;
         }
 
         endRenderEncoder();
-        ClearColor colorClear = clearColor.orElse(ClearColor.TRANSPARENT);
-        MemorySegment encoder = commandBuffer().makeRenderCommandEncoder(
+        MTLRenderCommandEncoder encoder = commandBuffer().makeRenderCommandEncoder(
                 colorAttachment,
                 depthAttachment,
                 viewportWidth,
                 viewportHeight,
-                clearColor.isPresent() ? 1 : 0,
-                colorClear.red(),
-                colorClear.green(),
-                colorClear.blue(),
-                colorClear.alpha(),
-                clearDepth.isPresent() ? 1 : 0,
-                clearDepth.orElse(1.0)
+                clearColorEnabled ? 1 : 0,
+                clearColorRed,
+                clearColorGreen,
+                clearColorBlue,
+                clearColorAlpha,
+                clearDepthEnabled ? 1 : 0,
+                clearDepthValue
         );
-        if (MetalProbe.isNullHandle(encoder)) {
+        if (encoder == null) {
             return null;
         }
         renderEncoder = encoder;
@@ -141,12 +139,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     }
 
     void endRenderEncoder() {
-        if (MetalProbe.isNullHandle(renderEncoder)) {
+        if (renderEncoder == null) {
             return;
         }
-        MetalNativeBridge.INSTANCE.MTLCommandEncoder_endEncoding(renderEncoder);
-        MetalNativeBridge.INSTANCE.metallum_release_object(renderEncoder);
-        renderEncoder = MemorySegment.NULL;
+        renderEncoder.endEncoding();
+        renderEncoder = null;
         renderColorAttachment = MemorySegment.NULL;
         renderDepthAttachment = MemorySegment.NULL;
     }
@@ -160,13 +157,27 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
         RenderPassDescriptor.Attachment<Optional<Vector4fc>> colorAttachment = colorAttachments.getFirst();
         GpuTextureView colorTexture = colorAttachment.textureView();
-        Optional<ClearColor> resolvedColorClear = resolveColorAttachmentClear(colorTexture, toClearColor(colorAttachment.clearValue()));
+        Optional<Vector4fc> colorClear = colorAttachment.clearValue();
+        Vector4fc pendingColor = pendingColorClears.remove(castTexture(colorTexture.texture()));
+        if (pendingColor != null && isFullTextureView(colorTexture) && colorClear.isEmpty()) {
+            colorClear = Optional.of(pendingColor);
+        } else if (pendingColor != null) {
+            flushPendingClear(castTexture(colorTexture.texture()));
+        }
 
         RenderPassDescriptor.Attachment<OptionalDouble> depthAttachment = descriptor.depthAttachment();
         GpuTextureView depthTexture = depthAttachment == null ? null : depthAttachment.textureView();
-        OptionalDouble resolvedDepthClear = depthAttachment == null
-                ? OptionalDouble.empty()
-                : resolveDepthAttachmentClear(depthTexture, depthAttachment.clearValue());
+        OptionalDouble depthClear = depthAttachment == null ? OptionalDouble.empty() : depthAttachment.clearValue();
+        if (depthAttachment != null) {
+            MetalGpuTexture metalDepth = castTexture(depthTexture.texture());
+            Double pendingDepth = pendingDepthClears.remove(metalDepth);
+            if (pendingDepth != null && isFullTextureView(depthTexture) && depthClear.isEmpty()) {
+                depthClear = OptionalDouble.of(pendingDepth);
+            } else if (pendingDepth != null) {
+                flushPendingClear(metalDepth);
+            }
+        }
+
         RenderPass.RenderArea renderArea = descriptor.renderArea != null
                 ? descriptor.renderArea
                 : new RenderPass.RenderArea(0, 0, colorTexture.getWidth(0), colorTexture.getHeight(0));
@@ -177,8 +188,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 colorTexture,
                 depthTexture,
                 renderArea,
-                resolvedColorClear,
-                resolvedDepthClear
+                colorClear.orElse(null),
+                depthClear.isPresent(),
+                depthClear.orElse(0.0)
         );
         currentRenderPass = renderPass;
         renderPass.pushDebugGroup(descriptor.label());
@@ -199,16 +211,15 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
     @Override
     public void clearColorTexture(final @NonNull GpuTexture colorTexture, final @NonNull Vector4fc clearColor) {
-        MetalGpuTexture texture = castTexture(colorTexture);
-        deferColorClear(texture, ClearColor.copy(clearColor));
+        pendingColorClears.put(castTexture(colorTexture), new Vector4f(clearColor));
     }
 
     @Override
     public void clearColorAndDepthTextures(final @NonNull GpuTexture colorTexture, final @NonNull Vector4fc clearColor, final @NonNull GpuTexture depthTexture, final double clearDepth) {
         MetalGpuTexture color = castTexture(colorTexture);
         MetalGpuTexture depth = castTexture(depthTexture);
-        deferColorClear(color, ClearColor.copy(clearColor));
-        deferDepthClear(depth, clearDepth);
+        pendingColorClears.put(color, new Vector4f(clearColor));
+        pendingDepthClears.put(depth, clearDepth);
     }
 
     @Override
@@ -224,10 +235,10 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     ) {
         MetalGpuTexture color = castTexture(colorTexture);
         MetalGpuTexture depth = castTexture(depthTexture);
-        ClearColor resolvedClearColor = ClearColor.copy(clearColor);
+        Vector4fc clearColorCopy = new Vector4f(clearColor);
         if (isFullTextureRegion(color, depth, regionX, regionY, regionWidth, regionHeight)) {
-            deferColorClear(color, resolvedClearColor);
-            deferDepthClear(depth, clearDepth);
+            pendingColorClears.put(color, clearColorCopy);
+            pendingDepthClears.put(depth, clearDepth);
             return;
         }
         submitRenderPass();
@@ -235,10 +246,10 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         endRenderEncoder();
         commandBuffer().clearColorDepthTexturesRegion(
                 color.nativeHandle(),
-                resolvedClearColor.red(),
-                resolvedClearColor.green(),
-                resolvedClearColor.blue(),
-                resolvedClearColor.alpha(),
+                clearColorCopy.x(),
+                clearColorCopy.y(),
+                clearColorCopy.z(),
+                clearColorCopy.w(),
                 depth.nativeHandle(),
                 clearDepth,
                 regionX,
@@ -250,8 +261,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
     @Override
     public void clearDepthTexture(final @NonNull GpuTexture depthTexture, final double clearDepth) {
-        MetalGpuTexture texture = castTexture(depthTexture);
-        deferDepthClear(texture, clearDepth);
+        pendingDepthClears.put(castTexture(depthTexture), clearDepth);
     }
 
     @Override
@@ -527,143 +537,29 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         return (MetalGpuTexture) texture;
     }
 
-    void flushPendingTextureViewClear(final GpuTextureView textureView) {
-        flushPendingClear(castTexture(textureView.texture()));
-    }
-
-    boolean deferRenderPassClear(
-            final GpuTextureView colorTexture,
-            final Optional<ClearColor> clearColor,
-            @Nullable final GpuTextureView depthTexture,
-            final OptionalDouble clearDepth
-    ) {
-        if (clearColor.isPresent() && !isFullTextureView(colorTexture)) {
-            return false;
+    void flushPendingClear(final MetalGpuTexture texture) {
+        Vector4fc colorClear = pendingColorClears.remove(texture);
+        Double depthClear = pendingDepthClears.remove(texture);
+        if (colorClear == null && depthClear == null) {
+            return;
         }
-        if (clearDepth.isPresent() && (depthTexture == null || !isFullTextureView(depthTexture))) {
-            return false;
-        }
-        clearColor.ifPresent(color -> deferColorClear(castTexture(colorTexture.texture()), color));
-        if (clearDepth.isPresent()) {
-            deferDepthClear(castTexture(depthTexture.texture()), clearDepth.getAsDouble());
-        }
-        return true;
-    }
 
-    private void deferColorClear(final MetalGpuTexture texture, final ClearColor clearColor) {
-        PendingTextureClear state = pendingTextureClears.computeIfAbsent(texture, ignored -> new PendingTextureClear());
-        state.color = Optional.of(clearColor);
-    }
-
-    private void deferDepthClear(final MetalGpuTexture texture, final double clearDepth) {
-        PendingTextureClear state = pendingTextureClears.computeIfAbsent(texture, ignored -> new PendingTextureClear());
-        state.depth = OptionalDouble.of(clearDepth);
-    }
-
-    private void clearTexture(
-            final MemorySegment texture,
-            final int clearColorEnabled,
-            final float clearColorRed,
-            final float clearColorGreen,
-            final float clearColorBlue,
-            final float clearColorAlpha,
-            final int clearDepthEnabled,
-            final double clearDepth
-    ) {
         endBlitEncoder();
         endRenderEncoder();
-        MemorySegment encoder = commandBuffer().makeRenderCommandEncoder(
-                clearColorEnabled != 0 ? texture : null,
-                clearDepthEnabled != 0 ? texture : null,
-                1.0,
-                1.0,
-                clearColorEnabled,
-                clearColorRed,
-                clearColorGreen,
-                clearColorBlue,
-                clearColorAlpha,
-                clearDepthEnabled,
-                clearDepth
+        MTLRenderCommandEncoder encoder = commandBuffer().makeRenderCommandEncoder(
+                colorClear != null ? texture.nativeHandle() : null,
+                depthClear != null ? texture.nativeHandle() : null,
+                1.0, 1.0,
+                colorClear != null ? 1 : 0,
+                colorClear != null ? colorClear.x() : 0.0F,
+                colorClear != null ? colorClear.y() : 0.0F,
+                colorClear != null ? colorClear.z() : 0.0F,
+                colorClear != null ? colorClear.w() : 0.0F,
+                depthClear != null ? 1 : 0,
+                depthClear != null ? depthClear : 1.0
         );
-        if (MetalProbe.isNullHandle(encoder)) {
-            return;
-        }
-        MetalNativeBridge.INSTANCE.MTLCommandEncoder_endEncoding(encoder);
-        MetalNativeBridge.INSTANCE.metallum_release_object(encoder);
-    }
-
-    private void flushPendingClear(final MetalGpuTexture texture) {
-        PendingTextureClear pending = pendingTextureClears.remove(texture);
-        if (pending == null) {
-            return;
-        }
-        if (pending.color.isPresent()) {
-            clearTexture(
-                    texture.nativeHandle(),
-                    1,
-                    pending.color.get().red(),
-                    pending.color.get().green(),
-                    pending.color.get().blue(),
-                    pending.color.get().alpha(),
-                    0,
-                    1.0
-            );
-        }
-        if (pending.depth.isPresent()) {
-            clearTexture(
-                    texture.nativeHandle(),
-                    0,
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                    0.0F,
-                    1,
-                    pending.depth.getAsDouble()
-            );
-        }
-    }
-
-    private Optional<ClearColor> resolveColorAttachmentClear(
-            final GpuTextureView textureView,
-            final Optional<ClearColor> explicitClear
-    ) {
-        MetalGpuTexture texture = castTexture(textureView.texture());
-        PendingTextureClear pending = pendingTextureClears.get(texture);
-        if (pending == null || pending.color.isEmpty()) {
-            return explicitClear;
-        }
-        if (!isFullTextureView(textureView)) {
-            flushPendingClear(texture);
-            return explicitClear;
-        }
-        Optional<ClearColor> clear = explicitClear.isPresent() ? explicitClear : pending.color;
-        pending.color = Optional.empty();
-        removePendingIfEmpty(texture, pending);
-        return clear;
-    }
-
-    private OptionalDouble resolveDepthAttachmentClear(
-            final GpuTextureView textureView,
-            final OptionalDouble explicitClear
-    ) {
-        MetalGpuTexture texture = castTexture(textureView.texture());
-        PendingTextureClear pending = pendingTextureClears.get(texture);
-        if (pending == null || pending.depth.isEmpty()) {
-            return explicitClear;
-        }
-        if (!isFullTextureView(textureView)) {
-            flushPendingClear(texture);
-            return explicitClear;
-        }
-        OptionalDouble clear = explicitClear.isPresent() ? explicitClear : pending.depth;
-        pending.depth = OptionalDouble.empty();
-        removePendingIfEmpty(texture, pending);
-        return clear;
-    }
-
-    private void removePendingIfEmpty(final MetalGpuTexture texture, final PendingTextureClear pending) {
-        if (pending.color.isEmpty() && pending.depth.isEmpty()) {
-            pendingTextureClears.remove(texture);
+        if (encoder != null) {
+            encoder.endEncoding();
         }
     }
 
@@ -687,15 +583,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 && height == color.getHeight(0)
                 && width == depth.getWidth(0)
                 && height == depth.getHeight(0);
-    }
-
-    private static Optional<ClearColor> toClearColor(final Optional<Vector4fc> clearColor) {
-        return clearColor.map(ClearColor::copy);
-    }
-
-    private static final class PendingTextureClear {
-        Optional<ClearColor> color = Optional.empty();
-        OptionalDouble depth = OptionalDouble.empty();
     }
 
     private MetalGpuBuffer createStagingBuffer(final ByteBuffer source) {

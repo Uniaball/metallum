@@ -23,7 +23,7 @@ public final class MTLCommandBuffer {
         return encoder;
     }
 
-    public MemorySegment makeRenderCommandEncoder(
+    public MTLRenderCommandEncoder makeRenderCommandEncoder(
             final MemorySegment colorTexture,
             final MemorySegment depthTexture,
             final double viewportWidth,
@@ -36,7 +36,7 @@ public final class MTLCommandBuffer {
             final int clearDepthEnabled,
             final double clearDepth
     ) {
-        return MetalNativeBridge.INSTANCE.MTLCommandBuffer_makeRenderCommandEncoder(
+        MemorySegment encoder = MetalNativeBridge.INSTANCE.MTLCommandBuffer_makeRenderCommandEncoder(
                 this.requireHandle(),
                 colorTexture,
                 depthTexture,
@@ -50,6 +50,10 @@ public final class MTLCommandBuffer {
                 clearDepthEnabled,
                 clearDepth
         );
+        if (MetalProbe.isNullHandle(encoder)) {
+            return null;
+        }
+        return new MTLRenderCommandEncoder(encoder);
     }
 
     public void clearColorDepthTexturesRegion(
