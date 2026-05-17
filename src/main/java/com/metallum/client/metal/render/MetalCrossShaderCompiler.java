@@ -281,6 +281,10 @@ final class MetalCrossShaderCompiler {
                         "spvc_compiler_options_set_bool(MSL_ENABLE_DECORATION_BINDING)"
                 );
                 checkSpvc(
+                        Spvc.spvc_compiler_options_set_bool(options, Spvc.SPVC_COMPILER_OPTION_MSL_TEXTURE_BUFFER_NATIVE, true),
+                        "spvc_compiler_options_set_bool(MSL_TEXTURE_BUFFER_NATIVE)"
+                );
+                checkSpvc(
                         Spvc.spvc_compiler_options_set_bool(options, Spvc.SPVC_COMPILER_OPTION_FLIP_VERTEX_Y, true),
                         "spvc_compiler_options_set_bool(FLIP_VERTEX_Y)"
                 );

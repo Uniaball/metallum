@@ -349,6 +349,7 @@ private func encodeClearDraw(
     depthState: MTLDepthStencilState? = nil,
     clearDepth: Double = 0.0
 ) {
+    return withMetalAutoreleasePool {
     encoder.setViewport(MTLViewport(
         originX: 0.0,
         originY: 0.0,
@@ -376,6 +377,7 @@ private func encodeClearDraw(
     }
 
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+    }
 }
 
 private func buildClearPipeline(
@@ -383,6 +385,7 @@ private func buildClearPipeline(
     colorFormat: MTLPixelFormat,
     depthFormat: MTLPixelFormat = .invalid
 ) -> MTLRenderPipelineState? {
+    return withMetalAutoreleasePool {
     do {
         let library = try device.makeLibrary(source: clearMslSource(), options: nil)
 
@@ -406,12 +409,14 @@ private func buildClearPipeline(
         NSLog("[metallum] Failed to create clear pipeline: %@", String(describing: error))
         return nil
     }
+    }
 }
 
 private func buildPresentPipeline(
     device: MTLDevice,
     colorFormat: MTLPixelFormat
 ) -> MTLRenderPipelineState? {
+    return withMetalAutoreleasePool {
     do {
         let library = try device.makeLibrary(source: presentMslSource(), options: nil)
 
@@ -434,9 +439,11 @@ private func buildPresentPipeline(
         NSLog("[metallum] Failed to create present render pipeline: %@", String(describing: error))
         return nil
     }
+    }
 }
 
 private func ensurePresentLinearSampler(_ device: MTLDevice) -> MTLSamplerState? {
+    return withMetalAutoreleasePool {
     let key = objectAddress(device)
     if let cached = NativeState.presentLinearSamplers[key] {
         return cached
@@ -453,9 +460,11 @@ private func ensurePresentLinearSampler(_ device: MTLDevice) -> MTLSamplerState?
         NativeState.presentLinearSamplers[key] = sampler
     }
     return sampler
+    }
 }
 
 private func ensurePresentNearestSampler(_ device: MTLDevice) -> MTLSamplerState? {
+    return withMetalAutoreleasePool {
     let key = objectAddress(device)
     if let cached = NativeState.presentNearestSamplers[key] {
         return cached
@@ -472,9 +481,11 @@ private func ensurePresentNearestSampler(_ device: MTLDevice) -> MTLSamplerState
         NativeState.presentNearestSamplers[key] = sampler
     }
     return sampler
+    }
 }
 
 private func ensurePresentPipeline(_ device: MTLDevice, _ colorFormat: MTLPixelFormat) -> MTLRenderPipelineState? {
+    return withMetalAutoreleasePool {
     let key = PipelineVariantKey(deviceAddress: objectAddress(device), colorFormat: colorFormat, depthFormat: .invalid)
     if let cached = NativeState.presentPipelines[key] {
         return cached
@@ -484,9 +495,11 @@ private func ensurePresentPipeline(_ device: MTLDevice, _ colorFormat: MTLPixelF
         NativeState.presentPipelines[key] = pipeline
     }
     return pipeline
+    }
 }
 
 private func ensureClearColorDepthPipeline(_ device: MTLDevice, _ colorFormat: MTLPixelFormat, _ depthFormat: MTLPixelFormat) -> MTLRenderPipelineState? {
+    return withMetalAutoreleasePool {
     let key = PipelineVariantKey(deviceAddress: objectAddress(device), colorFormat: colorFormat, depthFormat: depthFormat)
     if let cached = NativeState.clearPipelines[key] {
         return cached
@@ -496,9 +509,11 @@ private func ensureClearColorDepthPipeline(_ device: MTLDevice, _ colorFormat: M
         NativeState.clearPipelines[key] = pipeline
     }
     return pipeline
+    }
 }
 
 private func ensureDepthStencilState(device: MTLDevice, compareOp: UInt64, writeDepth: Bool) -> MTLDepthStencilState? {
+    return withMetalAutoreleasePool {
     let key = DepthStencilKey(deviceAddress: objectAddress(device), compareOp: compareOp, writeDepth: writeDepth)
     if let cached = NativeState.depthStencilStates[key] {
         return cached
@@ -511,13 +526,16 @@ private func ensureDepthStencilState(device: MTLDevice, compareOp: UInt64, write
         NativeState.depthStencilStates[key] = state
     }
     return state
+    }
 }
 
 private func copiedArray(_ pointer: UnsafePointer<UInt64>?, count: UInt64) -> [UInt64] {
+    return withMetalAutoreleasePool {
     guard let pointer, count > 0 else {
         return []
     }
     return Array(UnsafeBufferPointer(start: pointer, count: Int(count)))
+    }
 }
 
 private func ensureDynamicPipeline(
@@ -546,6 +564,7 @@ private func ensureDynamicPipeline(
     blendOpAlpha: UInt64,
     writeMask: UInt64
 ) -> MTLRenderPipelineState? {
+    return withMetalAutoreleasePool {
     let formats = copiedArray(vertexAttributeFormats, count: vertexAttributeCount)
     let offsets = copiedArray(vertexAttributeOffsets, count: vertexAttributeCount)
     let attributeBufferSlots = copiedArray(vertexAttributeBufferSlots, count: vertexAttributeCount)
@@ -658,6 +677,7 @@ private func ensureDynamicPipeline(
         NSLog("[metallum] Failed to create dynamic render pipeline: %@", String(describing: error))
         return nil
     }
+    }
 }
 
 private func triangleFanOutputIndexCount(sourceCount: Int, buffer: MTLBuffer) -> Int? {
@@ -675,6 +695,7 @@ private func triangleFanOutputIndexCount(sourceCount: Int, buffer: MTLBuffer) ->
 }
 
 private func writeSequentialTriangleFanIndices(_ indexBuffer: MTLBuffer, vertexCount: Int) -> Int? {
+    return withMetalAutoreleasePool {
     guard vertexCount >= 3, vertexCount - 1 <= UInt64(UInt32.max), let generatedIndexCount = triangleFanOutputIndexCount(sourceCount: vertexCount, buffer: indexBuffer) else {
         return nil
     }
@@ -688,6 +709,7 @@ private func writeSequentialTriangleFanIndices(_ indexBuffer: MTLBuffer, vertexC
         writeIndex += 3
     }
     return generatedIndexCount
+    }
 }
 
 private func readIndex(_ indexBuffer: MTLBuffer, byteOffset: Int, index: Int, indexType: Int) -> UInt32 {
@@ -705,6 +727,7 @@ private func writeIndexedTriangleFanIndices(
     indexOffsetBytes: Int,
     indexCount: Int
 ) -> Int? {
+    return withMetalAutoreleasePool {
     guard indexCount >= 3, let generatedIndexCount = triangleFanOutputIndexCount(sourceCount: indexCount, buffer: destinationIndexBuffer) else {
         return nil
     }
@@ -719,6 +742,7 @@ private func writeIndexedTriangleFanIndices(
         writeIndex += 3
     }
     return generatedIndexCount
+    }
 }
 
 @_cdecl("metallum_create_system_default_device")
@@ -787,11 +811,13 @@ public func metallum_NSView_setMetalLayer(
 
 @_cdecl("metallum_NSView_clearLayer")
 public func metallum_NSView_clearLayer(_ viewPtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let view: NSView = object(viewPtr) else {
         return
     }
     view.layer = nil
     view.wantsLayer = false
+    }
 }
 
 @_cdecl("metallum_set_debug_labels_enabled")
@@ -827,22 +853,27 @@ public func metallum_MTLCommandQueue_makeCommandBuffer(
 
 @_cdecl("metallum_MTLCommandBuffer_commit")
 public func metallum_MTLCommandBuffer_commit(_ commandBufferPtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let commandBuffer: MTLCommandBuffer = object(commandBufferPtr) else {
         return
     }
     commandBuffer.commit()
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_isCompleted")
 public func metallum_MTLCommandBuffer_isCompleted(_ commandBufferPtr: UnsafeMutableRawPointer?) -> Int32 {
+    return withMetalAutoreleasePool {
     guard let commandBuffer: MTLCommandBuffer = object(commandBufferPtr) else {
         return 2
     }
     return commandBuffer.status == .completed || commandBuffer.status == .error ? 1 : 0
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_waitUntilCompleted")
 public func metallum_MTLCommandBuffer_waitUntilCompleted(_ commandBufferPtr: UnsafeMutableRawPointer?, _ timeoutMs: UInt64) -> Int32 {
+    return withMetalAutoreleasePool {
     guard let commandBuffer: MTLCommandBuffer = object(commandBufferPtr) else {
         return 2
     }
@@ -854,6 +885,7 @@ public func metallum_MTLCommandBuffer_waitUntilCompleted(_ commandBufferPtr: Uns
     }
     commandBuffer.waitUntilCompleted()
     return commandBuffer.status == .completed || commandBuffer.status == .error ? 0 : 1
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_pushDebugGroup")
@@ -861,18 +893,22 @@ public func metallum_MTLCommandBuffer_pushDebugGroup(
     _ commandBufferPtr: UnsafeMutableRawPointer?,
     _ labelPtr: UnsafePointer<CChar>?
 ) {
+    return withMetalAutoreleasePool {
     guard NativeState.debugLabelsEnabled, let commandBuffer: MTLCommandBuffer = object(commandBufferPtr) else {
         return
     }
     commandBuffer.pushDebugGroup(stringFromOptionalCString(labelPtr) ?? "")
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_popDebugGroup")
 public func metallum_MTLCommandBuffer_popDebugGroup(_ commandBufferPtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard NativeState.debugLabelsEnabled, let commandBuffer: MTLCommandBuffer = object(commandBufferPtr) else {
         return
     }
     commandBuffer.popDebugGroup()
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_makeBlitCommandEncoder")
@@ -889,18 +925,22 @@ public func metallum_MTLCommandBuffer_makeBlitCommandEncoder(
 
 @_cdecl("metallum_MTLCommandEncoder_endEncoding")
 public func metallum_MTLCommandEncoder_endEncoding(_ encoderPtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLCommandEncoder = object(encoderPtr) else {
         return
     }
     encoder.endEncoding()
+    }
 }
 
 @_cdecl("metallum_MTLBlitCommandEncoder_endEncoding")
 public func metallum_MTLBlitCommandEncoder_endEncoding(_ blitEncoderPtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLBlitCommandEncoder = object(blitEncoderPtr) else {
         return
     }
     encoder.endEncoding()
+    }
 }
 
 @_cdecl("metallum_MTLBlitCommandEncoder_copyFromBufferToBuffer")
@@ -912,6 +952,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromBufferToBuffer(
     _ destinationOffset: UInt64,
     _ length: UInt64
 ) {
+    return withMetalAutoreleasePool {
     guard
         let blit: MTLBlitCommandEncoder = object(blitEncoderPtr),
         let sourceBuffer: MTLBuffer = object(sourceBufferPtr),
@@ -921,6 +962,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromBufferToBuffer(
         return
     }
     blit.copy(from: sourceBuffer, sourceOffset: Int(sourceOffset), to: destinationBuffer, destinationOffset: Int(destinationOffset), size: Int(length))
+    }
 }
 
 @_cdecl("metallum_MTLBlitCommandEncoder_copyFromBufferToTexture")
@@ -938,6 +980,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromBufferToTexture(
     _ bytesPerRow: UInt64,
     _ bytesPerImage: UInt64
 ) {
+    return withMetalAutoreleasePool {
     guard
         let blit: MTLBlitCommandEncoder = object(blitEncoderPtr),
         let sourceBuffer: MTLBuffer = object(sourceBufferPtr),
@@ -958,6 +1001,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromBufferToTexture(
         destinationLevel: Int(mipLevel),
         destinationOrigin: MTLOrigin(x: Int(x), y: Int(y), z: 0)
     )
+    }
 }
 
 @_cdecl("metallum_MTLBlitCommandEncoder_copyFromTextureToTexture")
@@ -973,6 +1017,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromTextureToTexture(
     _ width: UInt64,
     _ height: UInt64
 ) {
+    return withMetalAutoreleasePool {
     guard
         let blit: MTLBlitCommandEncoder = object(blitEncoderPtr),
         let sourceTexture: MTLTexture = object(sourceTexturePtr),
@@ -993,6 +1038,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromTextureToTexture(
         destinationLevel: Int(mipLevel),
         destinationOrigin: MTLOrigin(x: Int(destX), y: Int(destY), z: 0)
     )
+    }
 }
 
 @_cdecl("metallum_MTLBlitCommandEncoder_copyFromTextureToBuffer")
@@ -1010,6 +1056,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromTextureToBuffer(
     _ bytesPerRow: UInt64,
     _ bytesPerImage: UInt64
 ) {
+    return withMetalAutoreleasePool {
     guard
         let blit: MTLBlitCommandEncoder = object(blitEncoderPtr),
         let sourceTexture: MTLTexture = object(sourceTexturePtr),
@@ -1030,6 +1077,7 @@ public func metallum_MTLBlitCommandEncoder_copyFromTextureToBuffer(
         destinationBytesPerRow: Int(bytesPerRow),
         destinationBytesPerImage: Int(bytesPerImage)
     )
+    }
 }
 
 @_cdecl("metallum_create_buffer")
@@ -1133,33 +1181,49 @@ public func metallum_create_buffer_texture_view(
     _ bytesPerRow: UInt64
 ) -> UnsafeMutableRawPointer? {
     return withMetalAutoreleasePool {
-    guard let buffer: MTLBuffer = object(bufferPtr), width > 0, height > 0, bytesPerRow > 0 else {
+    guard
+        let buffer: MTLBuffer = object(bufferPtr),
+        let metalPixelFormat = MTLPixelFormat(rawValue: UInt(pixelFormat)),
+        metalPixelFormat != .invalid,
+        width > 0,
+        bytesPerRow > 0
+    else {
         return nil
     }
 
-    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: MTLPixelFormat(rawValue: UInt(pixelFormat)) ?? .invalid,
-        width: Int(width),
-        height: Int(height),
-        mipmapped: false
+    let nativeOffset = Int(offset)
+    let nativeWidth = Int(width)
+    let nativeBytesPerRow = Int(bytesPerRow)
+    guard nativeOffset >= 0, nativeWidth > 0, nativeBytesPerRow > 0, nativeOffset <= buffer.length, nativeBytesPerRow <= buffer.length - nativeOffset else {
+        return nil
+    }
+
+    let alignment = buffer.device.minimumLinearTextureAlignment(for: metalPixelFormat)
+    guard alignment > 0, nativeOffset % alignment == 0 else {
+        return nil
+    }
+
+    let alignedBytesPerRow = roundUp(nativeBytesPerRow, alignment: alignment)
+    let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
+        with: metalPixelFormat,
+        width: nativeWidth,
+        resourceOptions: [],
+        usage: MTLTextureUsage.shaderRead
     )
-    descriptor.usage = MTLTextureUsage.shaderRead
     descriptor.storageMode = buffer.storageMode
     descriptor.hazardTrackingMode = .tracked
 
-    let nativeOffset = Int(offset)
-    let nativeBytesPerRow = Int(bytesPerRow)
-    let requiredLength = nativeOffset + nativeBytesPerRow * Int(height)
-    guard requiredLength <= buffer.length else {
-        return nil
-    }
-
-    guard let textureView = buffer.makeTexture(descriptor: descriptor, offset: nativeOffset, bytesPerRow: nativeBytesPerRow) else {
+    guard let textureView = buffer.makeTexture(descriptor: descriptor, offset: nativeOffset, bytesPerRow: alignedBytesPerRow) else {
         return nil
     }
 
     return retainedPointer(textureView)
     }
+}
+
+private func roundUp(_ value: Int, alignment: Int) -> Int {
+    let remainder = value % alignment
+    return remainder == 0 ? value : value + alignment - remainder
 }
 
 @_cdecl("metallum_create_sampler")
@@ -1196,10 +1260,12 @@ public func metallum_MTLDevice_makeDepthStencilState(
     _ depthCompareOp: UInt64,
     _ writeDepth: Int32
 ) -> UnsafeMutableRawPointer? {
+    return withMetalAutoreleasePool {
     guard let device: MTLDevice = object(devicePtr) else {
         return nil
     }
     return unretainedPointer(ensureDepthStencilState(device: device, compareOp: depthCompareOp, writeDepth: writeDepth != 0))
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_makeRenderCommandEncoder")
@@ -1263,19 +1329,23 @@ public func metallum_MTLCommandBuffer_makeRenderCommandEncoder(
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setRenderPipelineState")
 public func metallum_MTLRenderCommandEncoder_setRenderPipelineState(_ encoderPtr: UnsafeMutableRawPointer?, _ pipelinePtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr), let pipeline: MTLRenderPipelineState = object(pipelinePtr) else {
         return
     }
     encoder.setRenderPipelineState(pipeline)
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setDepthStencilState")
 public func metallum_MTLRenderCommandEncoder_setDepthStencilState(_ encoderPtr: UnsafeMutableRawPointer?, _ depthStencilStatePtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let state: MTLDepthStencilState? = object(depthStencilStatePtr)
     encoder.setDepthStencilState(state)
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setDepthBias")
@@ -1285,22 +1355,27 @@ public func metallum_MTLRenderCommandEncoder_setDepthBias(
     _ slopeScale: Double,
     _ clamp: Double
 ) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     encoder.setDepthBias(Float(depthBias), slopeScale: Float(slopeScale), clamp: Float(clamp))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setFrontFacingWinding")
 public func metallum_MTLRenderCommandEncoder_setFrontFacingWinding(_ encoderPtr: UnsafeMutableRawPointer?, _ clockwise: Int32) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     encoder.setFrontFacing(clockwise != 0 ? .clockwise : .counterClockwise)
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setCullMode")
 public func metallum_MTLRenderCommandEncoder_setCullMode(_ encoderPtr: UnsafeMutableRawPointer?, _ cullMode: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
@@ -1312,18 +1387,22 @@ public func metallum_MTLRenderCommandEncoder_setCullMode(_ encoderPtr: UnsafeMut
     default:
         encoder.setCullMode(.none)
     }
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setTriangleFillMode")
 public func metallum_MTLRenderCommandEncoder_setTriangleFillMode(_ encoderPtr: UnsafeMutableRawPointer?, _ lines: Int32) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     encoder.setTriangleFillMode(lines != 0 ? .lines : .fill)
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setVertexBuffer")
 public func metallum_MTLRenderCommandEncoder_setVertexBuffer(_ encoderPtr: UnsafeMutableRawPointer?, _ bufferPtr: UnsafeMutableRawPointer?, _ offset: UInt64, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
@@ -1332,51 +1411,62 @@ public func metallum_MTLRenderCommandEncoder_setVertexBuffer(_ encoderPtr: Unsaf
     }
     let buffer: MTLBuffer? = object(bufferPtr)
     encoder.setVertexBuffer(buffer, offset: Int(offset), index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setFragmentBuffer")
 public func metallum_MTLRenderCommandEncoder_setFragmentBuffer(_ encoderPtr: UnsafeMutableRawPointer?, _ bufferPtr: UnsafeMutableRawPointer?, _ offset: UInt64, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let buffer: MTLBuffer? = object(bufferPtr)
     encoder.setFragmentBuffer(buffer, offset: Int(offset), index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setVertexTexture")
 public func metallum_MTLRenderCommandEncoder_setVertexTexture(_ encoderPtr: UnsafeMutableRawPointer?, _ texturePtr: UnsafeMutableRawPointer?, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let texture: MTLTexture? = object(texturePtr)
     encoder.setVertexTexture(texture, index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setFragmentTexture")
 public func metallum_MTLRenderCommandEncoder_setFragmentTexture(_ encoderPtr: UnsafeMutableRawPointer?, _ texturePtr: UnsafeMutableRawPointer?, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let texture: MTLTexture? = object(texturePtr)
     encoder.setFragmentTexture(texture, index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setVertexSamplerState")
 public func metallum_MTLRenderCommandEncoder_setVertexSamplerState(_ encoderPtr: UnsafeMutableRawPointer?, _ samplerPtr: UnsafeMutableRawPointer?, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let sampler: MTLSamplerState? = object(samplerPtr)
     encoder.setVertexSamplerState(sampler, index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setFragmentSamplerState")
 public func metallum_MTLRenderCommandEncoder_setFragmentSamplerState(_ encoderPtr: UnsafeMutableRawPointer?, _ samplerPtr: UnsafeMutableRawPointer?, _ index: UInt64) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     let sampler: MTLSamplerState? = object(samplerPtr)
     encoder.setFragmentSamplerState(sampler, index: Int(index))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_setScissorRect")
@@ -1387,10 +1477,12 @@ public func metallum_MTLRenderCommandEncoder_setScissorRect(
     _ width: UInt64,
     _ height: UInt64
 ) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
     encoder.setScissorRect(MTLScissorRect(x: Int(x), y: Int(y), width: Int(width), height: Int(height)))
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_drawPrimitives")
@@ -1401,6 +1493,7 @@ public func metallum_MTLRenderCommandEncoder_drawPrimitives(
     _ vertexCount: Int,
     _ instanceCount: Int
 ) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr) else {
         return
     }
@@ -1411,6 +1504,7 @@ public func metallum_MTLRenderCommandEncoder_drawPrimitives(
         vertexCount: vertexCount,
         instanceCount: instanceCount
     )
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_drawIndexedPrimitives")
@@ -1424,6 +1518,7 @@ public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitives(
     _ instanceCount: Int,
     _ baseVertex: Int
 ) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr), let indexBuffer: MTLBuffer = object(indexBufferPtr) else {
         return
     }
@@ -1437,6 +1532,7 @@ public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitives(
         baseVertex: baseVertex,
         baseInstance: 0
     )
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_drawPrimitivesTriangleFan")
@@ -1447,6 +1543,7 @@ public func metallum_MTLRenderCommandEncoder_drawPrimitivesTriangleFan(
     _ vertexCount: Int,
     _ instanceCount: Int
 ) {
+    return withMetalAutoreleasePool {
     guard let encoder: MTLRenderCommandEncoder = object(encoderPtr), let fanIndexBuffer: MTLBuffer = object(fanIndexBufferPtr) else {
         return
     }
@@ -1463,6 +1560,7 @@ public func metallum_MTLRenderCommandEncoder_drawPrimitivesTriangleFan(
         baseVertex: firstVertex,
         baseInstance: 0
     )
+    }
 }
 
 @_cdecl("metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan")
@@ -1476,6 +1574,7 @@ public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan(
     _ baseVertex: Int,
     _ instanceCount: Int
 ) {
+    return withMetalAutoreleasePool {
     guard
         let encoder: MTLRenderCommandEncoder = object(encoderPtr),
         let indexBuffer: MTLBuffer = object(indexBufferPtr),
@@ -1503,6 +1602,7 @@ public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan(
         baseVertex: baseVertex,
         baseInstance: 0
     )
+    }
 }
 
 @_cdecl("metallum_MTLCommandBuffer_clearColorDepthTexturesRegion")
@@ -1742,24 +1842,30 @@ public func metallum_MTLCommandBuffer_encodePresentTextureToDrawable(
 
 @_cdecl("metallum_MTLCommandBuffer_presentDrawable")
 public func metallum_MTLCommandBuffer_presentDrawable(_ commandBufferPtr: UnsafeMutableRawPointer?, _ drawablePtr: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let commandBuffer: MTLCommandBuffer = object(commandBufferPtr), let drawable: CAMetalDrawable = object(drawablePtr) else {
         return
     }
     commandBuffer.present(drawable)
+    }
 }
 
 @_cdecl("metallum_release_object")
 public func metallum_release_object(_ obj: UnsafeMutableRawPointer?) {
+    return withMetalAutoreleasePool {
     guard let obj else {
         return
     }
     Unmanaged<AnyObject>.fromOpaque(obj).release()
+    }
 }
 
 @_cdecl("metallum_get_buffer_contents")
 public func metallum_get_buffer_contents(_ bufferPtr: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    return withMetalAutoreleasePool {
     guard let buffer: MTLBuffer = object(bufferPtr) else {
         return nil
     }
     return buffer.contents()
+    }
 }

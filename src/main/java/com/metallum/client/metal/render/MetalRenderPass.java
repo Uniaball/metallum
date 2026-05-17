@@ -562,16 +562,18 @@ final class MetalRenderPass implements RenderPassBackend {
         MetalGpuBuffer texelBuffer = MetalCommandEncoder.castBuffer(texelSlice.buffer());
         long pixelFormat = MetalPipelineSupport.texelBufferPixelFormatCode(texelFormat);
         int pixelSize = texelFormat.pixelSize();
-        long width = 4096L;
-        long bytesPerRow = width * pixelSize;
-        long height = Math.max(1L, (texelSlice.length() + bytesPerRow - 1L) / bytesPerRow);
+        long texelByteLength = texelSlice.length();
+        if (texelByteLength <= 0L || texelByteLength % pixelSize != 0L) {
+            throw new IllegalStateException("Texel buffer " + binding.name() + " length " + texelByteLength + " is not a valid " + texelFormat + " range");
+        }
+        long texelCount = texelByteLength / pixelSize;
         MemorySegment texelTexture = MetalNativeBridge.INSTANCE.metallum_create_buffer_texture_view(
                 texelBuffer.nativeHandle(),
                 pixelFormat,
                 texelSlice.offset(),
-                width,
-                height,
-                bytesPerRow
+                texelCount,
+                1L,
+                texelByteLength
         );
         if (MetalNativeBridge.isNullHandle(texelTexture)) {
             throw new IllegalStateException("Failed to create Metal texel buffer texture for " + binding.name());
