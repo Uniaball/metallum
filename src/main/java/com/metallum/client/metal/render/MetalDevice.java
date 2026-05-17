@@ -35,7 +35,6 @@ final class MetalDevice implements GpuDeviceBackend {
     private final MetalCommandEncoder commandEncoder;
     private final DeviceInfo deviceInfo;
     public final MTLCommandQueue commandQueue;
-    private final MetalBufferPool bufferPool = new MetalBufferPool();
     private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new ConcurrentHashMap<>();
     private volatile ShaderSource activeShaderSource;
 
@@ -125,7 +124,7 @@ final class MetalDevice implements GpuDeviceBackend {
 
     @Override
     public @NonNull GpuBuffer createBuffer(@Nullable final Supplier<String> label, @GpuBuffer.Usage final int usage, final ByteBuffer data) {
-        MetalGpuBuffer buffer = (MetalGpuBuffer) this.createBuffer(label, usage | GpuBuffer.USAGE_COPY_DST, data.remaining());
+        MetalGpuBuffer buffer = (MetalGpuBuffer) this.createBuffer(label, usage, data.remaining());
         this.commandEncoder.writeToBuffer(buffer.slice(), data.duplicate());
         return buffer;
     }
@@ -164,7 +163,6 @@ final class MetalDevice implements GpuDeviceBackend {
     public void close() {
         this.waitForSubmittedGpuWork();
         this.commandEncoder.close();
-        this.bufferPool.close();
         try {
             MetalNativeBridge.INSTANCE.metallum_NSView_clearLayer(this.cocoaView);
         } catch (Throwable ignored) {
@@ -200,19 +198,6 @@ final class MetalDevice implements GpuDeviceBackend {
 
     void queueResourceRelease(final MemorySegment handle) {
         this.commandEncoder.queueForDestroy(() -> MetalNativeBridge.INSTANCE.metallum_release_object(handle));
-    }
-
-    @Nullable
-    MemorySegment acquireReusableBuffer(final long size, final long resourceOptions) {
-        return this.bufferPool.acquire(size, resourceOptions);
-    }
-
-    long allocationSize(final long requestedSize) {
-        return this.bufferPool.allocationSize(requestedSize);
-    }
-
-    void queueBufferRecycle(final MemorySegment handle, final long size, final long resourceOptions) {
-        this.commandEncoder.queueForDestroy(() -> this.bufferPool.recycle(handle, size, resourceOptions));
     }
 
     MetalCompiledRenderPipeline getOrCompilePipeline(final RenderPipeline pipeline) {

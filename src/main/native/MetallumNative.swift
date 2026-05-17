@@ -5,7 +5,6 @@ import QuartzCore
 import simd
 
 private let metallumMaxVertexBufferSlot = 30
-private let metallumMaxSubmitsInFlight = 2
 private let metallumSharedResourceOptions: MTLResourceOptions = .storageModeShared
 
 private struct DynamicPipelineKey: Hashable {

@@ -31,11 +31,8 @@ final class MetalGpuBuffer extends GpuBuffer {
 
         this.cpuAccessible = isCpuAccessible(usage);
         this.resourceOptions = toMtlResourceOptions(usage);
-        this.allocationSize = device.allocationSize(size);
-        MemorySegment pooledHandle = device.acquireReusableBuffer(this.allocationSize, this.resourceOptions);
-        this.nativeHandle = pooledHandle != null
-                ? pooledHandle
-                : MetalNativeBridge.INSTANCE.metallum_create_buffer(device.metalDeviceHandle(), this.allocationSize, this.resourceOptions);
+        this.allocationSize = size;
+        this.nativeHandle = MetalNativeBridge.INSTANCE.metallum_create_buffer(device.metalDeviceHandle(), this.allocationSize, this.resourceOptions);
         if (MetalNativeBridge.isNullHandle(this.nativeHandle)) {
             throw new IllegalStateException("Failed to create Metal buffer");
         }
@@ -94,7 +91,7 @@ final class MetalGpuBuffer extends GpuBuffer {
         if (this.nativeHandle != null) {
             MemorySegment handle = this.nativeHandle;
             this.nativeHandle = null;
-            this.device.queueBufferRecycle(handle, this.allocationSize, this.resourceOptions);
+            this.device.queueResourceRelease(handle);
         }
     }
 
@@ -116,6 +113,8 @@ final class MetalGpuBuffer extends GpuBuffer {
         return new GpuBufferSlice.MappedView(this.slice(offset, length), mapped, () -> {
         });
     }
+
+    public int getUsage() { return this.usage(); }
 
     private static boolean isCpuAccessible(@GpuBuffer.Usage final int usage) {
         return (usage & GpuBuffer.USAGE_MAP_READ) != 0
