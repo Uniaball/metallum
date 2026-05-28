@@ -54,6 +54,10 @@ public final class MetalTerrainFaceCulling {
         ((MeshDataSegments) mesh).metallum$setTerrainFaceSegments(segments);
     }
 
+    private static boolean isCullableLayer(final ChunkSectionLayer layer) {
+        return layer == ChunkSectionLayer.SOLID || layer == ChunkSectionLayer.CUTOUT;
+    }
+
     @Nullable
     static CullableFaceLayout buildCullableFaceLayout(
             final ChunkSectionLayer layer,
@@ -61,7 +65,7 @@ public final class MetalTerrainFaceCulling {
             final MeshData.DrawState drawState,
             final long sourceBase
     ) {
-        if (!enabled || layer != ChunkSectionLayer.SOLID) {
+        if (!enabled || !isCullableLayer(layer)) {
             return null;
         }
 
@@ -145,11 +149,13 @@ public final class MetalTerrainFaceCulling {
             final ChunkSectionLayer layer,
             final SectionRenderDispatcher.RenderSectionBufferSlice slice
     ) {
-        if (!enabled || layer != ChunkSectionLayer.SOLID || slice == null || !(sectionMesh instanceof SectionMeshSegments segmentsHolder)) {
+        if (!enabled || !isCullableLayer(layer) || slice == null || !(sectionMesh instanceof SectionMeshSegments segmentsHolder)) {
             return;
         }
 
-        FaceSegments segments = segmentsHolder.metallum$getTerrainFaceSegments();
+        FaceSegments segments = layer == ChunkSectionLayer.SOLID
+                ? segmentsHolder.metallum$getTerrainFaceSegments()
+                : segmentsHolder.metallum$getCutoutTerrainFaceSegments();
         if (segments == null) {
             return;
         }
@@ -282,6 +288,11 @@ public final class MetalTerrainFaceCulling {
         FaceSegments metallum$getTerrainFaceSegments();
 
         void metallum$setTerrainFaceSegments(FaceSegments segments);
+
+        @Nullable
+        FaceSegments metallum$getCutoutTerrainFaceSegments();
+
+        void metallum$setCutoutTerrainFaceSegments(FaceSegments segments);
 
         @Nullable
         BlockPos metallum$getTerrainSectionOrigin();

@@ -88,7 +88,8 @@ final class MetalTransientMemory implements TransientMemory {
         TransientBlockAllocator.Allocation<MetalGpuBuffer> alloc = gpuBlockAllocator.allocate(size, alignment, minimumAllocation, elementSize);
         GpuBufferSlice slice = new GpuBufferSlice(wrap(alloc.block(), usage), alloc.offset(), alloc.size());
         ByteBuffer hostView = alloc.block().sliceStorage(alloc.offset(), alloc.size());
-        return new MappedView(slice, hostView, () -> {});
+        return new MappedView(slice, hostView, () -> {
+        });
     }
 
     private MetalGpuBuffer wrap(final MetalGpuBuffer block, @Usage final int usage) {

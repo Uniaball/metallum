@@ -25,6 +25,8 @@ public abstract class CompiledSectionMeshMixin implements MetalTerrainFaceCullin
     @Unique
     private MetalTerrainFaceCulling.FaceSegments metallum$terrainFaceSegments;
     @Unique
+    private MetalTerrainFaceCulling.FaceSegments metallum$cutoutTerrainFaceSegments;
+    @Unique
     @Nullable
     private BlockPos metallum$terrainSectionOrigin;
 
@@ -39,6 +41,10 @@ public abstract class CompiledSectionMeshMixin implements MetalTerrainFaceCullin
         if (solidMesh instanceof MetalTerrainFaceCulling.MeshDataSegments segmentsHolder) {
             this.metallum$terrainFaceSegments = segmentsHolder.metallum$getTerrainFaceSegments();
         }
+        MeshData cutoutMesh = renderedLayers.get(ChunkSectionLayer.CUTOUT);
+        if (cutoutMesh instanceof MetalTerrainFaceCulling.MeshDataSegments segmentsHolder) {
+            this.metallum$cutoutTerrainFaceSegments = segmentsHolder.metallum$getTerrainFaceSegments();
+        }
     }
 
     @Override
@@ -49,6 +55,16 @@ public abstract class CompiledSectionMeshMixin implements MetalTerrainFaceCullin
     @Override
     public void metallum$setTerrainFaceSegments(final MetalTerrainFaceCulling.FaceSegments segments) {
         this.metallum$terrainFaceSegments = segments;
+    }
+
+    @Override
+    public MetalTerrainFaceCulling.FaceSegments metallum$getCutoutTerrainFaceSegments() {
+        return this.metallum$cutoutTerrainFaceSegments;
+    }
+
+    @Override
+    public void metallum$setCutoutTerrainFaceSegments(final MetalTerrainFaceCulling.FaceSegments segments) {
+        this.metallum$cutoutTerrainFaceSegments = segments;
     }
 
     @Override

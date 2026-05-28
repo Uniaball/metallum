@@ -1,6 +1,5 @@
 package com.metallum.client.metal.render;
 
-import com.metallum.client.metal.optimization.MetalShaderSourceOverrides;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.BindGroupLayout;
 import com.mojang.blaze3d.pipeline.BindGroupLayout.UniformDescription;
@@ -49,8 +48,6 @@ final class MetalCrossShaderCompiler {
                                 + ", fragment shader " + pipeline.getFragmentShader() + " missing: " + (fragmentSource == null) + ")"
                 );
             }
-            vertexSource = MetalShaderSourceOverrides.vertexSource(pipeline, vertexSource);
-
             String vertexGlsl = GlslPreprocessor.injectDefines(vertexSource, pipeline.getShaderDefines());
             String fragmentGlsl = GlslPreprocessor.injectDefines(fragmentSource, pipeline.getShaderDefines());
 

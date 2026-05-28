@@ -20,37 +20,33 @@ import java.util.Map;
 @Environment(EnvType.CLIENT)
 public final class MetalTerrainVertexPacking {
     public static final int VANILLA_BLOCK_VERTEX_SIZE = 28;
-    public static final int PACKED_TERRAIN_VERTEX_SIZE = 16;
+    public static final int PACKED_TERRAIN_VERTEX_SIZE = 24;
 
     private static final int SRC_POSITION_X = 0;
-    private static final int SRC_POSITION_Y = 4;
-    private static final int SRC_POSITION_Z = 8;
     private static final int SRC_COLOR = 12;
     private static final int SRC_UV0_U = 16;
     private static final int SRC_UV0_V = 20;
-    private static final int SRC_UV2_BLOCK = 24;
-    private static final int SRC_UV2_SKY = 26;
+    private static final int SRC_UV2 = 24;
 
-    private static final int DST_POSITION_X = 0;
-    private static final int DST_POSITION_Y = 2;
-    private static final int DST_POSITION_Z = 4;
-    private static final int DST_COLOR = 6;
-    private static final int DST_UV0_U = 10;
-    private static final int DST_UV0_V = 12;
-    private static final int DST_UV2 = 14;
+    private static final int DST_POSITION = 0;
+    private static final int DST_COLOR = 12;
+    private static final int DST_UV0_U = 16;
+    private static final int DST_UV0_V = 18;
+    private static final int DST_UV2 = 20;
 
-    private static final long METAL_VERTEX_FORMAT_HALF3 = 36L;
+    private static final long METAL_VERTEX_FORMAT_FLOAT3 = 3L;
     private static final long METAL_VERTEX_FORMAT_UCHAR4_NORMALIZED = 5L;
     private static final long METAL_VERTEX_FORMAT_USHORT2_NORMALIZED = 8L;
-    private static final long METAL_VERTEX_FORMAT_UCHAR2 = 38L;
+    private static final long METAL_VERTEX_FORMAT_SHORT2 = 9L;
+
     private static final long[] PACKED_ATTRIBUTE_FORMATS = {
-            METAL_VERTEX_FORMAT_HALF3,
+            METAL_VERTEX_FORMAT_FLOAT3,
             METAL_VERTEX_FORMAT_UCHAR4_NORMALIZED,
             METAL_VERTEX_FORMAT_USHORT2_NORMALIZED,
-            METAL_VERTEX_FORMAT_UCHAR2
+            METAL_VERTEX_FORMAT_SHORT2
     };
     private static final long[] PACKED_ATTRIBUTE_OFFSETS = {
-            DST_POSITION_X,
+            DST_POSITION,
             DST_COLOR,
             DST_UV0_U,
             DST_UV2
@@ -183,36 +179,20 @@ public final class MetalTerrainVertexPacking {
         long src = sourceBase + (long) sourceVertex * VANILLA_BLOCK_VERTEX_SIZE;
         long dst = destinationBase + (long) destinationVertex * PACKED_TERRAIN_VERTEX_SIZE;
 
-        float x = MemoryUtil.memGetFloat(src + SRC_POSITION_X);
-        float y = MemoryUtil.memGetFloat(src + SRC_POSITION_Y);
-        float z = MemoryUtil.memGetFloat(src + SRC_POSITION_Z);
         float u = MemoryUtil.memGetFloat(src + SRC_UV0_U);
         float v = MemoryUtil.memGetFloat(src + SRC_UV0_V);
-        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z) || !isAtlasUv(u) || !isAtlasUv(v)) {
-            return false;
-        }
 
-        MemoryUtil.memPutShort(dst + DST_POSITION_X, Float.floatToFloat16(x));
-        MemoryUtil.memPutShort(dst + DST_POSITION_Y, Float.floatToFloat16(y));
-        MemoryUtil.memPutShort(dst + DST_POSITION_Z, Float.floatToFloat16(z));
+
+        MemoryUtil.memCopy(src + SRC_POSITION_X, dst + DST_POSITION, 12);
         MemoryUtil.memCopy(src + SRC_COLOR, dst + DST_COLOR, Integer.BYTES);
         MemoryUtil.memPutShort(dst + DST_UV0_U, toUnorm16(u));
         MemoryUtil.memPutShort(dst + DST_UV0_V, toUnorm16(v));
-        MemoryUtil.memPutByte(dst + DST_UV2, toUnsignedByte(MemoryUtil.memGetShort(src + SRC_UV2_BLOCK) & 0xFFFF));
-        MemoryUtil.memPutByte(dst + DST_UV2 + 1, toUnsignedByte(MemoryUtil.memGetShort(src + SRC_UV2_SKY) & 0xFFFF));
+        MemoryUtil.memCopy(src + SRC_UV2, dst + DST_UV2, 4);
         return true;
-    }
-
-    private static boolean isAtlasUv(final float value) {
-        return Float.isFinite(value) && value >= -0.0001F && value <= 1.0001F;
     }
 
     private static short toUnorm16(final float value) {
         float clamped = Math.max(0.0F, Math.min(1.0F, value));
         return (short) Math.round(clamped * 65535.0F);
-    }
-
-    private static byte toUnsignedByte(final int value) {
-        return (byte) Math.max(0, Math.min(255, value));
     }
 }
