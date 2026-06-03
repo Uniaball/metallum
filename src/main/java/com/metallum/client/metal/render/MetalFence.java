@@ -21,7 +21,7 @@ final class MetalFence implements GpuFence {
     }
 
     @Override
-    public boolean awaitCompletion(final long timeoutMs) {
-        return this.closed || this.encoder.awaitSubmitCompletion(this.submitIndex, timeoutMs);
+    public boolean awaitCompletion(final long timeoutNS) {
+        return this.closed || this.encoder.awaitSubmitCompletion(this.submitIndex, timeoutNS / 1_000_000);
     }
 }

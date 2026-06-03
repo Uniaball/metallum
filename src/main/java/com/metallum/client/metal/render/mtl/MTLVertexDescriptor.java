@@ -1,14 +1,14 @@
-package com.metallum.client.metal.render;
+package com.metallum.client.metal.render.mtl;
 
 import com.metallum.client.metal.render.bridge.MetalNativeBridge;
 
 import java.lang.foreign.MemorySegment;
 
-public final class MetalVertexDescriptor implements AutoCloseable {
+public final class MTLVertexDescriptor implements AutoCloseable {
     private final MemorySegment handle;
     private boolean closed;
 
-    public MetalVertexDescriptor() {
+    public MTLVertexDescriptor() {
         this.handle = MetalNativeBridge.INSTANCE.metallum_MTLVertexDescriptor_create();
     }
 
@@ -20,8 +20,8 @@ public final class MetalVertexDescriptor implements AutoCloseable {
         MetalNativeBridge.INSTANCE.metallum_MTLVertexDescriptor_setAttribute(this.handle, index, format, offset, bufferIndex);
     }
 
-    public void setLayout(long bufferIndex, long stride, long stepFunction, long stepRate) {
-        MetalNativeBridge.INSTANCE.metallum_MTLVertexDescriptor_setLayout(this.handle, bufferIndex, stride, stepFunction, stepRate);
+    public void setLayout(long bufferIndex, long stride, MTLVertexStepFunction stepFunction, long stepRate) {
+        MetalNativeBridge.INSTANCE.metallum_MTLVertexDescriptor_setLayout(this.handle, bufferIndex, stride, stepFunction.value, stepRate);
     }
 
     @Override

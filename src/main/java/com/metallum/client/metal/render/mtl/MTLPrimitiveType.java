@@ -17,4 +17,15 @@ public enum MTLPrimitiveType {
     MTLPrimitiveType(final long value) {
         this.value = value;
     }
+
+    public static MTLPrimitiveType from(final com.mojang.blaze3d.PrimitiveTopology mode) {
+        return switch (mode) {
+            case TRIANGLES, QUADS, LINES -> Triangle;
+            case TRIANGLE_STRIP -> TriangleStrip;
+            case DEBUG_LINES -> Line;
+            case DEBUG_LINE_STRIP -> LineStrip;
+            case POINTS -> Point;
+            case TRIANGLE_FAN -> TriangleFan;
+        };
+    }
 }

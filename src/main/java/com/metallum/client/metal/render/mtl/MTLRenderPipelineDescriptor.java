@@ -1,14 +1,14 @@
-package com.metallum.client.metal.render;
+package com.metallum.client.metal.render.mtl;
 
 import com.metallum.client.metal.render.bridge.MetalNativeBridge;
 
 import java.lang.foreign.MemorySegment;
 
-public final class MetalRenderPipelineDescriptor implements AutoCloseable {
+public final class MTLRenderPipelineDescriptor implements AutoCloseable {
     private final MemorySegment handle;
     private boolean closed;
 
-    public MetalRenderPipelineDescriptor() {
+    public MTLRenderPipelineDescriptor() {
         this.handle = MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_create();
     }
 
@@ -17,7 +17,7 @@ public final class MetalRenderPipelineDescriptor implements AutoCloseable {
     }
 
     public boolean setFunctions(
-            final MetalDevice device,
+            final MemorySegment deviceHandle,
             final String vertexSource,
             final String fragmentSource,
             final String vertexEntry,
@@ -25,7 +25,7 @@ public final class MetalRenderPipelineDescriptor implements AutoCloseable {
     ) {
         return MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_setFunctions(
                 this.handle,
-                device.metalDeviceHandle(),
+                deviceHandle,
                 vertexSource,
                 fragmentSource,
                 vertexEntry,
@@ -33,7 +33,7 @@ public final class MetalRenderPipelineDescriptor implements AutoCloseable {
         );
     }
 
-    public void setVertexDescriptor(final MetalVertexDescriptor vertexDescriptor) {
+    public void setVertexDescriptor(final MTLVertexDescriptor vertexDescriptor) {
         MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_setVertexDescriptor(
                 this.handle,
                 vertexDescriptor.handle()
@@ -50,24 +50,32 @@ public final class MetalRenderPipelineDescriptor implements AutoCloseable {
     }
 
     public void setBlendState(
-            final int enabled,
-            final long srcRgb,
-            final long dstRgb,
-            final long opRgb,
-            final long srcAlpha,
-            final long dstAlpha,
-            final long opAlpha,
+            final MTLBlendFactor sourceColorBlendFactor,
+            final MTLBlendFactor destinationColorBlendFactor,
+            final MTLBlendOperation colorBlendOperation,
+            final MTLBlendFactor sourceAlphaBlendFactor,
+            final MTLBlendFactor destinationAlphaBlendFactor,
+            final MTLBlendOperation alphaBlendOperation,
             final long writeMask
     ) {
         MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_setBlendState(
                 this.handle,
-                enabled,
-                srcRgb,
-                dstRgb,
-                opRgb,
-                srcAlpha,
-                dstAlpha,
-                opAlpha,
+                1,
+                sourceColorBlendFactor.value,
+                destinationColorBlendFactor.value,
+                colorBlendOperation.value,
+                sourceAlphaBlendFactor.value,
+                destinationAlphaBlendFactor.value,
+                alphaBlendOperation.value,
+                writeMask
+        );
+    }
+
+    public void disableBlending(final long writeMask) {
+        MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_setBlendState(
+                this.handle,
+                0,
+                0, 0, 0, 0, 0, 0,
                 writeMask
         );
     }

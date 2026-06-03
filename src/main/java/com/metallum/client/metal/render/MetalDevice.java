@@ -6,22 +6,25 @@ import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.pipeline.CompiledRenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.preprocessor.GlslPreprocessor;
 import com.mojang.blaze3d.shaders.GpuDebugOptions;
 import com.mojang.blaze3d.shaders.ShaderSource;
+import com.mojang.blaze3d.shaders.ShaderType;
 import com.mojang.blaze3d.systems.*;
 import com.mojang.blaze3d.textures.*;
+import com.mojang.blaze3d.vulkan.glsl.GlslCompiler;
+import com.mojang.blaze3d.vulkan.glsl.IntermediaryShaderModule;
+import com.mojang.blaze3d.vulkan.glsl.ShaderCompileException;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.renderer.ShaderDefines;
+import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Map;
-import java.util.OptionalDouble;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 import java.util.function.Supplier;
 
 @Environment(EnvType.CLIENT)
@@ -33,7 +36,8 @@ final class MetalDevice implements GpuDeviceBackend {
     private final MetalCommandEncoder commandEncoder;
     private final DeviceInfo deviceInfo;
     public final MTLCommandQueue commandQueue;
-    private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new ConcurrentHashMap<>();
+    private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new IdentityHashMap<>();
+    private final Map<ShaderCompilationKey, IntermediaryShaderModule> shaderCache = new HashMap<>();
     private volatile ShaderSource activeShaderSource;
 
     MetalDevice(
@@ -146,7 +150,7 @@ final class MetalDevice implements GpuDeviceBackend {
         if (shaderSource != null) {
             this.activeShaderSource = shaderSource;
         }
-        return this.compiledPipelines.computeIfAbsent(pipeline, p -> MetalCrossShaderCompiler.compile(p, effectiveSource));
+        return this.compiledPipelines.computeIfAbsent(pipeline, p -> MetalCrossShaderCompiler.compile(this, p, effectiveSource));
     }
 
     @Override
@@ -154,6 +158,8 @@ final class MetalDevice implements GpuDeviceBackend {
         this.waitForSubmittedGpuWork();
         this.compiledPipelines.values().forEach(MetalCompiledRenderPipeline::close);
         this.compiledPipelines.clear();
+        this.shaderCache.values().forEach(IntermediaryShaderModule::close);
+        this.shaderCache.clear();
     }
 
     @Override
@@ -197,7 +203,26 @@ final class MetalDevice implements GpuDeviceBackend {
     }
 
     MetalCompiledRenderPipeline getOrCompilePipeline(final RenderPipeline pipeline) {
-        return this.compiledPipelines.computeIfAbsent(pipeline, p -> MetalCrossShaderCompiler.compile(p, this.activeShaderSource));
+        return this.compiledPipelines.computeIfAbsent(pipeline, p -> MetalCrossShaderCompiler.compile(this, p, this.activeShaderSource));
+    }
+
+    IntermediaryShaderModule getOrCompileShader(final Identifier id, final ShaderType type, final ShaderDefines defines, final ShaderSource shaderSource) {
+        ShaderCompilationKey key = new ShaderCompilationKey(id, type, defines);
+        return this.shaderCache.computeIfAbsent(key, k -> {
+            String source = shaderSource.get(k.id(), k.type());
+            if (source == null) {
+                return IntermediaryShaderModule.INVALID;
+            }
+            String sourceWithDefines = GlslPreprocessor.injectDefines(source, k.defines());
+            try (GlslCompiler glslCompiler = new GlslCompiler()) {
+                return glslCompiler.createIntermediary(k.id().toDebugFileName(), sourceWithDefines, k.type());
+            } catch (ShaderCompileException e) {
+                throw new IllegalStateException("Failed to compile shader " + k.id(), e);
+            }
+        });
+    }
+
+    private record ShaderCompilationKey(Identifier id, ShaderType type, ShaderDefines defines) {
     }
 
     private static DeviceInfo buildDeviceInfo(final String deviceName) {

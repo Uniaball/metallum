@@ -4,14 +4,11 @@ import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.BindGroupLayout;
 import com.mojang.blaze3d.pipeline.BindGroupLayout.UniformDescription;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.preprocessor.GlslPreprocessor;
 import com.mojang.blaze3d.shaders.ShaderSource;
 import com.mojang.blaze3d.shaders.ShaderType;
 import com.mojang.blaze3d.vulkan.VulkanBindGroupLayout;
 import com.mojang.blaze3d.vulkan.VulkanBindGroupLayout.VulkanBindGroupEntryType;
-import com.mojang.blaze3d.vulkan.glsl.GlslCompiler;
-import com.mojang.blaze3d.vulkan.glsl.IntermediaryShaderModule;
-import com.mojang.blaze3d.vulkan.glsl.ShaderCompileException;
+import com.mojang.blaze3d.vulkan.glsl.*;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
@@ -20,7 +17,6 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.spvc.Spvc;
 
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -37,45 +33,39 @@ final class MetalCrossShaderCompiler {
     private MetalCrossShaderCompiler() {
     }
 
-    static MetalCompiledRenderPipeline compile(final RenderPipeline pipeline, final ShaderSource shaderSource) {
-        try (GlslCompiler glslCompiler = new GlslCompiler()) {
-            String vertexSource = shaderSource.get(pipeline.getVertexShader(), ShaderType.VERTEX);
-            String fragmentSource = shaderSource.get(pipeline.getFragmentShader(), ShaderType.FRAGMENT);
-            if (vertexSource == null || fragmentSource == null) {
+    static MetalCompiledRenderPipeline compile(final MetalDevice device, final RenderPipeline pipeline, final ShaderSource shaderSource) {
+        try {
+            IntermediaryShaderModule vertexSpirv = device.getOrCompileShader(pipeline.getVertexShader(), ShaderType.VERTEX, pipeline.getShaderDefines(), shaderSource);
+            IntermediaryShaderModule fragmentSpirv = device.getOrCompileShader(pipeline.getFragmentShader(), ShaderType.FRAGMENT, pipeline.getShaderDefines(), shaderSource);
+            if (vertexSpirv == IntermediaryShaderModule.INVALID || fragmentSpirv == IntermediaryShaderModule.INVALID) {
                 throw new IllegalStateException(
-                        "Couldn't find source for pipeline " + pipeline.getLocation()
-                                + " (vertex shader " + pipeline.getVertexShader() + " missing: " + (vertexSource == null)
-                                + ", fragment shader " + pipeline.getFragmentShader() + " missing: " + (fragmentSource == null) + ")"
+                        "Couldn't compile shader for pipeline " + pipeline.getLocation()
                 );
             }
-            String vertexGlsl = GlslPreprocessor.injectDefines(vertexSource, pipeline.getShaderDefines());
-            String fragmentGlsl = GlslPreprocessor.injectDefines(fragmentSource, pipeline.getShaderDefines());
 
-            try (
-                    IntermediaryShaderModule vertexSpirv = glslCompiler.createIntermediary(pipeline.getLocation() + ".vert", vertexGlsl, ShaderType.VERTEX);
-                    IntermediaryShaderModule fragmentSpirv = glslCompiler.createIntermediary(pipeline.getLocation() + ".frag", fragmentGlsl, ShaderType.FRAGMENT)
-            ) {
-                List<VulkanBindGroupLayout.Entry> layoutEntries = new ArrayList<>();
-                addToBindGroup(layoutEntries, vertexSpirv, pipeline);
-                addToBindGroup(layoutEntries, fragmentSpirv, pipeline);
-                List<String> vertexOutputs = extractVariableNames(vertexSpirv.outputs());
-                vertexSpirv.rebind(MetalPipelineSupport.vertexAttributeNames(pipeline), layoutEntries);
-                fragmentSpirv.rebind(vertexOutputs, layoutEntries);
+            List<VulkanBindGroupLayout.Entry> layoutEntries = new ArrayList<>();
+            addToBindGroup(layoutEntries, vertexSpirv, pipeline);
+            addToBindGroup(layoutEntries, fragmentSpirv, pipeline);
+            List<String> vertexOutputs = extractVariableNames(vertexSpirv.outputs());
 
-                String vertexMsl = spirvToMsl(vertexSpirv.spirv());
-                String fragmentMsl = spirvToMsl(fragmentSpirv.spirv());
-                String vertexEntryPoint = extractEntryPoint(vertexMsl, VERTEX_ENTRY_PATTERN, "main0");
-                String fragmentEntryPoint = extractEntryPoint(fragmentMsl, FRAGMENT_ENTRY_PATTERN, "main0");
-                List<MetalCompiledRenderPipeline.ResourceBinding> resources = buildResourceBindings(layoutEntries, vertexMsl, fragmentMsl);
-                return new MetalCompiledRenderPipeline(
-                        pipeline,
-                        vertexMsl,
-                        fragmentMsl,
-                        vertexEntryPoint,
-                        fragmentEntryPoint,
-                        resources
-                );
-            }
+            vertexSpirv.rebind(MetalPipelineSupport.vertexAttributeNames(pipeline), layoutEntries);
+            String vertexMsl = spirvToMsl(vertexSpirv.spirv());
+
+            fragmentSpirv.rebind(vertexOutputs, layoutEntries);
+            String fragmentMsl = spirvToMsl(fragmentSpirv.spirv());
+
+            String vertexEntryPoint = extractEntryPoint(vertexMsl, VERTEX_ENTRY_PATTERN, "main0");
+            String fragmentEntryPoint = extractEntryPoint(fragmentMsl, FRAGMENT_ENTRY_PATTERN, "main0");
+            List<MetalCompiledRenderPipeline.ResourceBinding> resources = buildResourceBindings(layoutEntries, vertexMsl, fragmentMsl);
+            return new MetalCompiledRenderPipeline(
+                    device,
+                    pipeline,
+                    vertexMsl,
+                    fragmentMsl,
+                    vertexEntryPoint,
+                    fragmentEntryPoint,
+                    resources
+            );
         } catch (ShaderCompileException e) {
             throw new IllegalStateException("Failed to compile Metal cross shader for pipeline " + pipeline.getLocation(), e);
         }
@@ -88,18 +78,18 @@ final class MetalCrossShaderCompiler {
     ) throws ShaderCompileException {
         List<UniformDescription> uniforms = BindGroupLayout.flattenUniforms(pipeline.getBindGroupLayouts());
         List<String> samplers = BindGroupLayout.flattenSamplers(pipeline.getBindGroupLayouts());
-        for (Object buffer : shader.uniformBuffers()) {
-            String name = readName(buffer);
+        for (SpvUniformBuffer buffer : shader.uniformBuffers()) {
+            String name = buffer.name();
             if (findUniform(uniforms, name) == null) {
                 throw new ShaderCompileException("Unable to find shader defined uniform (" + name + ")");
             }
             addBindingIfAbsent(entries, VulkanBindGroupEntryType.UNIFORM_BUFFER, name, null);
         }
 
-        for (Object sampler : shader.samplers()) {
-            String name = readName(sampler);
+        for (SpvSampler sampler : shader.samplers()) {
+            String name = sampler.name();
             UniformDescription uniform = findUniform(uniforms, name);
-            int dimensions = readInt(sampler, "dimensions");
+            int dimensions = sampler.dimensions();
             if (uniform != null) {
                 if (dimensions != 5) {
                     throw new ShaderCompileException("UTB (" + name + ") must have type of SpvDimBuffer");
@@ -141,62 +131,12 @@ final class MetalCrossShaderCompiler {
         entries.add(new VulkanBindGroupLayout.Entry(type, name, texelBufferFormat));
     }
 
-    private static List<String> extractVariableNames(final List<?> variables) throws ShaderCompileException {
+    private static List<String> extractVariableNames(final List<SpvVariable> variables) {
         List<String> names = new ArrayList<>(variables.size());
-        for (Object variable : variables) {
-            names.add(readName(variable));
+        for (SpvVariable variable : variables) {
+            names.add(variable.name());
         }
         return names;
-    }
-
-    private static String readName(final Object object) throws ShaderCompileException {
-        try {
-            Method nameMethod = object.getClass().getDeclaredMethod("name");
-            nameMethod.setAccessible(true);
-            Object name = nameMethod.invoke(object);
-            if (name instanceof String string) {
-                return string;
-            }
-            throw new ShaderCompileException("Unexpected reflected variable name type: " + name);
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            String fallback = tryParseNameFromRecordString(object);
-            if (fallback != null) {
-                return fallback;
-            }
-            throw new ShaderCompileException("Failed to read reflected variable name: " + e.getMessage());
-        }
-    }
-
-    private static int readInt(final Object object, final String accessorName) throws ShaderCompileException {
-        try {
-            Method method = object.getClass().getDeclaredMethod(accessorName);
-            method.setAccessible(true);
-            Object value = method.invoke(object);
-            if (value instanceof Integer integer) {
-                return integer;
-            }
-            throw new ShaderCompileException("Unexpected reflected " + accessorName + " type: " + value);
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            throw new ShaderCompileException("Failed to read reflected " + accessorName + ": " + e.getMessage());
-        }
-    }
-
-    private static String tryParseNameFromRecordString(final Object object) {
-        String text = String.valueOf(object);
-        int nameStart = text.indexOf("name=");
-        if (nameStart < 0) {
-            return null;
-        }
-        int valueStart = nameStart + "name=".length();
-        int valueEnd = text.indexOf(',', valueStart);
-        if (valueEnd < 0) {
-            valueEnd = text.indexOf(']', valueStart);
-        }
-        if (valueEnd <= valueStart) {
-            return null;
-        }
-        String value = text.substring(valueStart, valueEnd).trim();
-        return value.isEmpty() ? null : value;
     }
 
     private static String extractEntryPoint(final String msl, final Pattern pattern, final String fallback) {

@@ -65,4 +65,46 @@ public enum MTLVertexFormat {
     MTLVertexFormat(final long value) {
         this.value = value;
     }
+
+    public static MTLVertexFormat from(final com.mojang.blaze3d.GpuFormat format) {
+        return switch (format) {
+            case R32_FLOAT -> Float;
+            case RG32_FLOAT -> Float2;
+            case RGB32_FLOAT -> Float3;
+            case RGBA32_FLOAT -> Float4;
+            case RGBA8_UNORM -> UChar4Normalized;
+            case RGBA8_UINT -> UChar4;
+            case RG16_UINT -> UShort2;
+            case RG16_UNORM -> UShort2Normalized;
+            case RG16_SINT -> Short2;
+            case RG16_SNORM -> Short2Normalized;
+            case RGBA16_UINT -> UShort4;
+            case RGBA16_SINT -> Short4;
+            case RGBA16_UNORM -> UShort4Normalized;
+            case RGBA16_SNORM -> Short4Normalized;
+            case R32_UINT -> UInt;
+            case RG32_UINT -> UInt2;
+            case RGB32_UINT -> UInt3;
+            case RGBA32_UINT -> UInt4;
+            case R32_SINT -> Int;
+            case RG32_SINT -> Int2;
+            case RGB32_SINT -> Int3;
+            case RGBA32_SINT -> Int4;
+            case R16_FLOAT -> Half;
+            case RG16_FLOAT -> Half2;
+            case RGBA16_FLOAT -> Half4;
+            case RGBA8_SNORM -> Char4Normalized;
+            case RGBA8_SINT -> Char4;
+            case RGB8_UNORM -> UChar3Normalized;
+            case RGB8_SNORM -> Char3Normalized;
+            case RGB8_UINT -> UChar3;
+            case RGB8_SINT -> Char3;
+            case RGB16_UINT -> UShort3;
+            case RGB16_SINT -> Short3;
+            case RGB16_UNORM -> UShort3Normalized;
+            case RGB16_SNORM -> Short3Normalized;
+            case RGB16_FLOAT -> Half3;
+            default -> Invalid;
+        };
+    }
 }

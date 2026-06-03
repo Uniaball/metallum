@@ -12,6 +12,7 @@
     "sources": "https://github.com/kokodio/metallum"
   },
   "license": "MIT",
+  "accessWidener": "metallum.accesswidener",
   "icon": "assets/metallum/icon.png",
   "environment": "*",
   "entrypoints": {

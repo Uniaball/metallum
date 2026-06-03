@@ -9,7 +9,6 @@ import com.mojang.blaze3d.PrimitiveTopology;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.platform.PolygonMode;
 import com.mojang.blaze3d.systems.GpuQueryPool;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderPassBackend;
@@ -54,16 +53,14 @@ final class MetalRenderPass implements RenderPassBackend {
     private final HashMap<String, TextureViewAndSampler> samplers = new HashMap<>();
     private final Set<MetalCompiledRenderPipeline.ResourceBinding> dirtyDescriptors = new HashSet<>();
     @Nullable
-    private RenderPipeline pipeline;
-    @Nullable
     private MetalCompiledRenderPipeline compiledPipeline;
     @Nullable
     private GpuBuffer indexBuffer;
     private MTLIndexType indexType = MTLIndexType.UInt16;
-    private MemorySegment nativePipeline = MemorySegment.NULL;
     private int pushedDebugGroups = 0;
     private boolean scissorDirty = true;
     private boolean vertexBuffersDirty = true;
+    private boolean pipelineDirty = true;
 
     MetalRenderPass(
             final MetalDevice device,
@@ -108,14 +105,12 @@ final class MetalRenderPass implements RenderPassBackend {
 
     @Override
     public void setPipeline(final @NonNull RenderPipeline pipeline) {
-        if (this.pipeline != pipeline) {
-            vertexBuffersDirty = true;
-            nativePipeline = MemorySegment.NULL;
-        }
-
         MetalCompiledRenderPipeline compiled = device.getOrCompilePipeline(pipeline);
-        this.pipeline = pipeline;
-        compiledPipeline = compiled;
+        if (this.compiledPipeline != compiled) {
+            this.compiledPipeline = compiled;
+            vertexBuffersDirty = true;
+            pipelineDirty = true;
+        }
     }
 
     @Override
@@ -234,7 +229,7 @@ final class MetalRenderPass implements RenderPassBackend {
                 draw.uniformUploaderConsumer().accept(uniformArgument, this::setUniform);
             }
 
-            if (scissorDirty || vertexBuffersDirty || !dirtyDescriptors.isEmpty() || MetalNativeBridge.isNullHandle(nativePipeline)) {
+            if (scissorDirty || vertexBuffersDirty || !dirtyDescriptors.isEmpty() || pipelineDirty) {
                 bindDrawState(enc);
             }
             MetalGpuBuffer nativeIndexBuffer = resolveIndexBuffer();
@@ -255,13 +250,13 @@ final class MetalRenderPass implements RenderPassBackend {
     @Override
     public void draw(final int vertexCount, final int instanceCount, final int firstVertex, final int firstInstance) {
         PrimitiveTopology primitiveTopology = primitiveTopology();
-        MTLPrimitiveType primitiveType = MetalPipelineSupport.primitiveTypeCode(primitiveTopology);
+        MTLPrimitiveType primitiveType = MTLPrimitiveType.from(primitiveTopology);
 
         MTLRenderCommandEncoder enc = renderEncoder();
 
         bindDrawState(enc);
 
-        if (primitiveType.value == MetalPipelineSupport.TRIANGLE_FAN_PRIMITIVE) {
+        if (primitiveType == MTLPrimitiveType.TriangleFan) {
             drawTriangleFan(firstVertex, vertexCount, instanceCount);
         } else {
             enc.drawPrimitives(primitiveType, firstVertex, vertexCount, Math.max(1, instanceCount));
@@ -327,25 +322,23 @@ final class MetalRenderPass implements RenderPassBackend {
     }
 
     void end() {
-        nativePipeline = MemorySegment.NULL;
+        pipelineDirty = true;
     }
 
     private void pushVertexBuffers(final MTLRenderCommandEncoder enc) {
-        for (int slot = 0; slot < MAX_VERTEX_BUFFERS; slot++) {
-            int metalSlot = compiledPipeline.metalSlotForVertexBinding(slot);
-            if (metalSlot < 0) {
-                continue;
-            }
-
+        int firstSlot = compiledPipeline.firstAvailableVertexBufferSlot();
+        int count = compiledPipeline.vertexBufferCount();
+        for (int slot = 0; slot < count; slot++) {
             GpuBufferSlice vertexBuffer = vertexBuffers[slot];
             if (vertexBuffer == null) {
-                throw new IllegalStateException("Missing vertex buffer at slot " + slot);
+                continue;
             }
             if (VALIDATION && vertexBuffer.buffer().isClosed()) {
                 throw new IllegalStateException("Vertex buffer at slot " + slot + " has been closed");
             }
 
             MetalGpuBuffer nativeVertexBuffer = MetalCommandEncoder.castBuffer(vertexBuffer.buffer());
+            int metalSlot = firstSlot + slot;
             enc.setBuffer(nativeVertexBuffer.nativeHandle(), vertexBuffer.offset(), metalSlot, MetalCompiledRenderPipeline.STAGE_VERTEX);
         }
     }
@@ -396,11 +389,11 @@ final class MetalRenderPass implements RenderPassBackend {
             final MTLIndexType indexType
     ) {
         PrimitiveTopology primitiveTopology = primitiveTopology();
-        MTLPrimitiveType primitiveType = MetalPipelineSupport.primitiveTypeCode(primitiveTopology);
+        MTLPrimitiveType primitiveType = MTLPrimitiveType.from(primitiveTopology);
 
         int safeInstanceCount = Math.max(1, instanceCount);
         long indexOffsetBytes = (long) firstIndex * indexType.bytes;
-        if (primitiveType.value == MetalPipelineSupport.TRIANGLE_FAN_PRIMITIVE) {
+        if (primitiveType == MTLPrimitiveType.TriangleFan) {
             long fanSize = Math.multiplyExact(Math.multiplyExact((long) indexCount - 2L, 3L), Integer.BYTES);
             try (GpuBufferSlice.MappedView mapped = commandEncoder.transientMemory().allocateGpuMapped(fanSize, Integer.BYTES, GpuBuffer.USAGE_INDEX)) {
                 GpuBufferSlice slice = mapped.slice();
@@ -428,21 +421,17 @@ final class MetalRenderPass implements RenderPassBackend {
         }
 
         boolean pipelineChanged = false;
-        if (MetalNativeBridge.isNullHandle(nativePipeline)) {
-            MemorySegment pipelineHandle = compiledPipeline.getOrCreateNativePipeline(
-                    device,
-                    colorAttachmentFormat().value,
-                    depthAttachmentFormat().value,
-                    stencilAttachmentFormat().value
-            );
+        if (pipelineDirty) {
+            boolean useDepth = depthAttachmentFormat().value != MTLPixelFormat.Invalid.value;
+            MemorySegment pipelineHandle = compiledPipeline.getNativePipeline(useDepth);
             if (MetalNativeBridge.isNullHandle(pipelineHandle)) {
                 throw new IllegalStateException("Native pipeline is unavailable");
             }
             enc.setRenderPipelineState(pipelineHandle);
-            nativePipeline = pipelineHandle;
+            pipelineDirty = false;
 
-            if (depthAttachmentFormat().value != MTLPixelFormat.Invalid.value) {
-                MemorySegment depthState = compiledPipeline.getOrCreateDepthStencilState(device);
+            if (useDepth) {
+                MemorySegment depthState = compiledPipeline.getDepthStencilState();
                 if (MetalNativeBridge.isNullHandle(depthState)) {
                     throw new IllegalStateException("Native depth state is unavailable");
                 }
@@ -454,10 +443,9 @@ final class MetalRenderPass implements RenderPassBackend {
                 );
             }
 
-            RenderPipeline pipelineInfo = compiledPipeline.info();
             enc.setFrontFacingWinding(MTLWinding.Clockwise);
-            enc.setCullMode(pipelineInfo.isCull() ? MTLCullMode.Back : MTLCullMode.None);
-            enc.setTriangleFillMode(pipelineInfo.getPolygonMode() == PolygonMode.WIREFRAME ? MTLTriangleFillMode.Lines : MTLTriangleFillMode.Fill);
+            enc.setCullMode(compiledPipeline.cullMode());
+            enc.setTriangleFillMode(compiledPipeline.fillMode());
 
             pipelineChanged = true;
         }
@@ -486,10 +474,10 @@ final class MetalRenderPass implements RenderPassBackend {
     }
 
     private PrimitiveTopology primitiveTopology() {
-        if (pipeline == null) {
+        if (compiledPipeline == null) {
             throw new IllegalStateException("Pipeline is missing");
         }
-        return pipeline.getPrimitiveTopology();
+        return compiledPipeline.topology();
     }
 
     private void pushEffectiveScissor(final MTLRenderCommandEncoder enc) {
@@ -580,7 +568,7 @@ final class MetalRenderPass implements RenderPassBackend {
         }
 
         MetalGpuBuffer texelBuffer = MetalCommandEncoder.castBuffer(texelSlice.buffer());
-        long pixelFormat = MetalPipelineSupport.toMtlPixelFormat(texelFormat).value;
+        long pixelFormat = MTLPixelFormat.from(texelFormat).value;
         int pixelSize = texelFormat.blockSize();
         long texelByteLength = texelSlice.length();
         if (texelByteLength <= 0L || texelByteLength % pixelSize != 0L) {

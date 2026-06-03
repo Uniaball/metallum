@@ -2,11 +2,12 @@ package com.metallum.client.metal.render;
 
 import com.metallum.client.metal.optimization.MetalTerrainVertexPacking;
 import com.metallum.client.metal.render.bridge.MetalNativeBridge;
-import com.metallum.client.metal.render.mtl.MTLVertexFormat;
+import com.metallum.client.metal.render.mtl.*;
 import com.mojang.blaze3d.GpuFormat;
+import com.mojang.blaze3d.PrimitiveTopology;
 import com.mojang.blaze3d.pipeline.CompiledRenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.platform.PolygonMode;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
 import net.fabricmc.api.EnvType;
@@ -14,14 +15,11 @@ import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.MemorySegment;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Environment(EnvType.CLIENT)
 final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoCloseable {
-    private static final int MAX_METAL_VERTEX_BUFFER_SLOT = 30;
     private static final int MAIN_VERTEX_BINDING_INDEX = 0;
 
     enum ResourceKind {
@@ -38,23 +36,22 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
                            @Nullable GpuFormat texelBufferFormat) {
     }
 
-    private final RenderPipeline info;
-    private final String vertexMsl;
-    private final String fragmentMsl;
-    private final String vertexEntryPoint;
-    private final String fragmentEntryPoint;
     private final List<ResourceBinding> resources;
     private final Map<String, ResourceBinding> resourcesByName;
-    private final MetalVertexDescriptor vertexDescriptor;
-    private final int[] metalSlotByVertexBinding;
-    private final long depthCompareOp;
-    private final int depthWrite;
+    private final int firstAvailableVertexBufferSlot;
+    private final MTLCullMode cullMode;
+    private final MTLTriangleFillMode fillMode;
     private final float depthBiasScaleFactor;
     private final float depthBiasConstant;
-    private final Map<PipelineVariantKey, MemorySegment> nativePipelines = new ConcurrentHashMap<>();
-    private MemorySegment depthStencilState = MemorySegment.NULL;
+    private final PrimitiveTopology topology;
+    private final int vertexBufferCount;
+
+    private final MemorySegment depthStencilState;
+    private final MemorySegment withDepthPipeline;
+    private final MemorySegment withoutDepthPipeline;
 
     MetalCompiledRenderPipeline(
+            final MetalDevice device,
             final RenderPipeline info,
             final String vertexMsl,
             final String fragmentMsl,
@@ -62,40 +59,103 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
             final String fragmentEntryPoint,
             final List<ResourceBinding> resources
     ) {
-        this.info = info;
-        this.vertexMsl = vertexMsl;
-        this.fragmentMsl = fragmentMsl;
-        this.vertexEntryPoint = vertexEntryPoint;
-        this.fragmentEntryPoint = fragmentEntryPoint;
         this.resources = resources;
         this.resourcesByName = resources.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(ResourceBinding::name, binding -> binding));
 
-        int[] metalSlotByVertexBinding = new int[RenderPass.MAX_VERTEX_BUFFERS];
-        Arrays.fill(metalSlotByVertexBinding, -1);
-        this.vertexDescriptor = buildVertexDescriptor(info, firstAvailableVertexBufferSlot(resources), metalSlotByVertexBinding);
-        this.metalSlotByVertexBinding = metalSlotByVertexBinding;
+        this.firstAvailableVertexBufferSlot = firstAvailableVertexBufferSlot(resources);
+        this.cullMode = info.isCull() ? MTLCullMode.Back : MTLCullMode.None;
+        this.fillMode = info.getPolygonMode() == PolygonMode.WIREFRAME ? MTLTriangleFillMode.Lines : MTLTriangleFillMode.Fill;
+        this.topology = info.getPrimitiveTopology();
+        this.vertexBufferCount = info.getVertexFormatBindings().length;
 
+        long depthCompareOp;
+        int depthWrite;
         var depthStencilState = info.getDepthStencilState();
         if (depthStencilState == null) {
-            this.depthCompareOp = 1L;
-            this.depthWrite = 0;
+            depthCompareOp = 1L;
+            depthWrite = 0;
             this.depthBiasScaleFactor = 0.0f;
             this.depthBiasConstant = 0.0f;
         } else {
-            this.depthCompareOp = MetalPipelineSupport.toCompareOpCode(depthStencilState.depthTest());
-            this.depthWrite = depthStencilState.writeDepth() ? 1 : 0;
+            depthCompareOp = MetalPipelineSupport.toCompareOpCode(depthStencilState.depthTest());
+            depthWrite = depthStencilState.writeDepth() ? 1 : 0;
             this.depthBiasScaleFactor = depthStencilState.depthBiasScaleFactor();
             this.depthBiasConstant = depthStencilState.depthBiasConstant();
+        }
+
+        this.depthStencilState = MetalNativeBridge.INSTANCE.MTLDevice_makeDepthStencilState(
+                device.metalDeviceHandle(),
+                depthCompareOp,
+                depthWrite
+        );
+
+        var colorTarget = info.getColorTargetState();
+        long colorFormat = colorTarget != null ? MTLPixelFormat.from(colorTarget.format()).value : MTLPixelFormat.BGRA8Unorm.value;
+
+        try (MTLVertexDescriptor vertexDescriptor = buildVertexDescriptor(info, this.firstAvailableVertexBufferSlot)) {
+            this.withoutDepthPipeline = createPipeline(device, info, vertexMsl, fragmentMsl, vertexEntryPoint, fragmentEntryPoint, vertexDescriptor, colorFormat, MTLPixelFormat.Invalid.value);
+            if (info.getDepthStencilState() != null) {
+                this.withDepthPipeline = createPipeline(device, info, vertexMsl, fragmentMsl, vertexEntryPoint, fragmentEntryPoint, vertexDescriptor, colorFormat, MTLPixelFormat.Depth32Float.value);
+            } else {
+                this.withDepthPipeline = MemorySegment.NULL;
+            }
+        }
+    }
+
+    private static MemorySegment createPipeline(
+            final MetalDevice device,
+            final RenderPipeline info,
+            final String vertexMsl,
+            final String fragmentMsl,
+            final String vertexEntryPoint,
+            final String fragmentEntryPoint,
+            final MTLVertexDescriptor vertexDescriptor,
+            final long colorFormat,
+            final long depthFormat
+    ) {
+        var colorTarget = info.getColorTargetState();
+        var blendFunction = colorTarget.blendFunction();
+
+        try (MTLRenderPipelineDescriptor pipelineDesc = new MTLRenderPipelineDescriptor()) {
+            boolean success = pipelineDesc.setFunctions(
+                    device.metalDeviceHandle(),
+                    vertexMsl,
+                    fragmentMsl,
+                    vertexEntryPoint,
+                    fragmentEntryPoint
+            );
+            if (!success) {
+                return MemorySegment.NULL;
+            }
+
+            pipelineDesc.setVertexDescriptor(vertexDescriptor);
+            pipelineDesc.setAttachmentFormats(colorFormat, depthFormat, MTLPixelFormat.Invalid.value);
+
+            if (blendFunction.isPresent()) {
+                var function = blendFunction.get();
+                pipelineDesc.setBlendState(
+                        MTLBlendFactor.from(function.color().sourceFactor()),
+                        MTLBlendFactor.from(function.color().destFactor()),
+                        MTLBlendOperation.from(function.color().op()),
+                        MTLBlendFactor.from(function.alpha().sourceFactor()),
+                        MTLBlendFactor.from(function.alpha().destFactor()),
+                        MTLBlendOperation.from(function.alpha().op()),
+                        colorTarget.writeMask()
+                );
+            } else {
+                pipelineDesc.disableBlending(colorTarget.writeMask());
+            }
+
+            return MetalNativeBridge.INSTANCE.metallum_MTLDevice_makeRenderPipelineState(
+                    device.metalDeviceHandle(),
+                    pipelineDesc.handle()
+            );
         }
     }
 
     @Override
     public boolean isValid() {
-        return true;
-    }
-
-    RenderPipeline info() {
-        return this.info;
+        return !MetalNativeBridge.isNullHandle(this.withoutDepthPipeline);
     }
 
     List<ResourceBinding> resources() {
@@ -107,8 +167,8 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         return this.resourcesByName.get(name);
     }
 
-    int metalSlotForVertexBinding(final int binding) {
-        return binding >= 0 && binding < this.metalSlotByVertexBinding.length ? this.metalSlotByVertexBinding[binding] : -1;
+    int firstAvailableVertexBufferSlot() {
+        return this.firstAvailableVertexBufferSlot;
     }
 
     float depthBiasScaleFactor() {
@@ -119,33 +179,38 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         return this.depthBiasConstant;
     }
 
-    @Nullable
-    MemorySegment getOrCreateDepthStencilState(final MetalDevice device) {
-        if (!MetalNativeBridge.isNullHandle(this.depthStencilState)) {
-            return this.depthStencilState;
-        }
-        MemorySegment created = MetalNativeBridge.INSTANCE.MTLDevice_makeDepthStencilState(
-                device.metalDeviceHandle(),
-                this.depthCompareOp,
-                this.depthWrite
-        );
-        if (MetalNativeBridge.isNullHandle(created)) {
-            return null;
-        }
-        this.depthStencilState = created;
-        return created;
+    MemorySegment getDepthStencilState() {
+        return this.depthStencilState;
     }
 
-    private static MetalVertexDescriptor buildVertexDescriptor(
+    MemorySegment getNativePipeline(final boolean useDepth) {
+        return useDepth && !MetalNativeBridge.isNullHandle(this.withDepthPipeline) ? this.withDepthPipeline : this.withoutDepthPipeline;
+    }
+
+    MTLCullMode cullMode() {
+        return this.cullMode;
+    }
+
+    MTLTriangleFillMode fillMode() {
+        return this.fillMode;
+    }
+
+    PrimitiveTopology topology() {
+        return this.topology;
+    }
+
+    int vertexBufferCount() {
+        return this.vertexBufferCount;
+    }
+
+    private static MTLVertexDescriptor buildVertexDescriptor(
             final RenderPipeline pipeline,
-            final int firstMetalVertexBufferSlot,
-            final int[] metalSlotByVertexBinding
+            final int firstMetalVertexBufferSlot
     ) {
         VertexFormat[] bindings = pipeline.getVertexFormatBindings();
-        int nextMetalSlot = firstMetalVertexBufferSlot;
         boolean packedTerrain = MetalTerrainVertexPacking.isPackedTerrainPipeline(pipeline.getLocation().toString());
 
-        MetalVertexDescriptor vertexDesc = new MetalVertexDescriptor();
+        MTLVertexDescriptor vertexDesc = new MTLVertexDescriptor();
         long attrIndex = 0;
 
         for (int i = 0; i < bindings.length; i++) {
@@ -154,16 +219,11 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
                 continue;
             }
 
-            if (nextMetalSlot > MAX_METAL_VERTEX_BUFFER_SLOT) {
-                throw new UnsupportedOperationException("Metal vertex/input buffer slots exceeded for " + pipeline.getLocation());
-            }
-
-            int metalSlot = nextMetalSlot++;
-            metalSlotByVertexBinding[i] = metalSlot;
+            int metalSlot = firstMetalVertexBufferSlot + i;
 
             long stride = packedTerrain && i == MAIN_VERTEX_BINDING_INDEX ? MetalTerrainVertexPacking.PACKED_TERRAIN_VERTEX_SIZE : binding.getVertexSize();
             long stepRate = binding.getStepRate();
-            long stepFunction = stepRate > 0 ? 1 : 0; // 0 = perVertex, 1 = perInstance
+            MTLVertexStepFunction stepFunction = stepRate > 0 ? MTLVertexStepFunction.PerInstance : MTLVertexStepFunction.PerVertex;
             vertexDesc.setLayout(metalSlot, stride, stepFunction, stepRate > 0 ? stepRate : 1);
 
             if (packedTerrain && i == MAIN_VERTEX_BINDING_INDEX) {
@@ -175,8 +235,8 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
                 }
             } else {
                 for (VertexFormatElement element : binding.getElements()) {
-                    MTLVertexFormat format = MetalPipelineSupport.vertexAttributeFormat(element.format());
-                    if (format.value == MTLVertexFormat.Invalid.value) {
+                    MTLVertexFormat format = MTLVertexFormat.from(element.format());
+                    if (format == MTLVertexFormat.Invalid) {
                         throw new IllegalStateException("Unsupported vertex attribute format: " + element.format());
                     }
                     vertexDesc.setAttribute(attrIndex, format.value, element.offset(), metalSlot);
@@ -198,77 +258,13 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         return maxVertexBufferBinding + 1;
     }
 
-    @Nullable
-    MemorySegment getOrCreateNativePipeline(final MetalDevice device, final long colorFormat, final long depthFormat, final long stencilFormat) {
-        PipelineVariantKey key = new PipelineVariantKey(colorFormat, depthFormat, stencilFormat);
-        MemorySegment cached = this.nativePipelines.get(key);
-        if (cached != null) {
-            return cached;
-        }
-
-        var colorTarget = this.info.getColorTargetState();
-        var blendFunction = colorTarget.blendFunction();
-
-        try (MetalRenderPipelineDescriptor pipelineDesc = new MetalRenderPipelineDescriptor()) {
-            boolean success = pipelineDesc.setFunctions(
-                    device,
-                    this.vertexMsl,
-                    this.fragmentMsl,
-                    this.vertexEntryPoint,
-                    this.fragmentEntryPoint
-            );
-            if (!success) {
-                return null;
-            }
-
-            pipelineDesc.setVertexDescriptor(this.vertexDescriptor);
-            pipelineDesc.setAttachmentFormats(colorFormat, depthFormat, stencilFormat);
-
-            if (blendFunction.isPresent()) {
-                var function = blendFunction.get();
-                pipelineDesc.setBlendState(
-                        1,
-                        MetalPipelineSupport.toBlendFactorCode(function.color().sourceFactor()).value,
-                        MetalPipelineSupport.toBlendFactorCode(function.color().destFactor()).value,
-                        MetalPipelineSupport.toBlendOpCode(function.color().op()),
-                        MetalPipelineSupport.toBlendFactorCode(function.alpha().sourceFactor()).value,
-                        MetalPipelineSupport.toBlendFactorCode(function.alpha().destFactor()).value,
-                        MetalPipelineSupport.toBlendOpCode(function.alpha().op()),
-                        colorTarget.writeMask()
-                );
-            } else {
-                pipelineDesc.setBlendState(0, 0, 0, 0, 0, 0, 0, colorTarget.writeMask());
-            }
-
-            MemorySegment created = MetalNativeBridge.INSTANCE.metallum_MTLDevice_makeRenderPipelineState(
-                    device.metalDeviceHandle(),
-                    pipelineDesc.handle()
-            );
-
-            if (MetalNativeBridge.isNullHandle(created)) {
-                return null;
-            }
-
-            this.nativePipelines.put(key, created);
-            return created;
-        }
-    }
-
     @Override
     public void close() {
-        if (this.vertexDescriptor != null) {
-            this.vertexDescriptor.close();
+        if (!MetalNativeBridge.isNullHandle(this.withDepthPipeline)) {
+            MetalNativeBridge.INSTANCE.metallum_release_object(this.withDepthPipeline);
         }
-        for (MemorySegment nativePipeline : this.nativePipelines.values()) {
-            if (!MetalNativeBridge.isNullHandle(nativePipeline)) {
-                MetalNativeBridge.INSTANCE.metallum_release_object(nativePipeline);
-            }
+        if (!MetalNativeBridge.isNullHandle(this.withoutDepthPipeline)) {
+            MetalNativeBridge.INSTANCE.metallum_release_object(this.withoutDepthPipeline);
         }
-        this.nativePipelines.clear();
-        this.depthStencilState = MemorySegment.NULL;
-    }
-
-    private record PipelineVariantKey(long colorFormat, long depthFormat,
-                                      long stencilFormat) {
     }
 }

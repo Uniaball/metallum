@@ -1327,15 +1327,15 @@ public func metallum_MTLVertexDescriptor_setAttribute(
 @_cdecl("metallum_MTLVertexDescriptor_setLayout")
 public func metallum_MTLVertexDescriptor_setLayout(
     _ desc: MTLVertexDescriptor,
-    _ bufferIndex: Int64,
-    _ stride: Int64,
-    _ stepFunction: Int64,
-    _ stepRate: Int64
+    _ bufferIndex: Int,
+    _ stride: Int,
+    _ stepFunction: MTLVertexStepFunction,
+    _ stepRate: Int
 ) {
     withMetalAutoreleasePool {
-        desc.layouts[Int(bufferIndex)].stride = Int(stride)
-        desc.layouts[Int(bufferIndex)].stepFunction = stepFunction == 1 ? .perInstance : .perVertex
-        desc.layouts[Int(bufferIndex)].stepRate = Int(stepRate)
+        desc.layouts[Int(bufferIndex)].stride = stride
+        desc.layouts[Int(bufferIndex)].stepFunction = stepFunction
+        desc.layouts[Int(bufferIndex)].stepRate = stepRate
     }
 }
 

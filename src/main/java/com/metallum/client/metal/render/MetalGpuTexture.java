@@ -36,7 +36,7 @@ final class MetalGpuTexture extends GpuTexture {
         if ((usage & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0 && format == GpuFormat.RGBA8_UNORM) {
             this.mtlPixelFormat = MTLPixelFormat.BGRA8Unorm;
         } else {
-            this.mtlPixelFormat = MetalPipelineSupport.toMtlPixelFormat(format);
+            this.mtlPixelFormat = MTLPixelFormat.from(format);
         }
         this.nativeHandle = MetalNativeBridge.INSTANCE.metallum_create_texture_2d(
                 device.metalDeviceHandle(),
