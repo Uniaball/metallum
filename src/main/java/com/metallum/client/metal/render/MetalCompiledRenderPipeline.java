@@ -90,7 +90,7 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         );
 
         var colorTarget = info.getColorTargetState();
-        long colorFormat = colorTarget != null ? MTLPixelFormat.from(colorTarget.format()).value : MTLPixelFormat.BGRA8Unorm.value;
+        long colorFormat = colorTarget != null ? MTLPixelFormat.from(colorTarget.format()).value : MTLPixelFormat.RGBA8Unorm.value;
 
         try (MTLVertexDescriptor vertexDescriptor = buildVertexDescriptor(info, this.firstAvailableVertexBufferSlot)) {
             this.withoutDepthPipeline = createPipeline(device, info, vertexMsl, fragmentMsl, vertexEntryPoint, fragmentEntryPoint, vertexDescriptor, colorFormat, MTLPixelFormat.Invalid.value);
