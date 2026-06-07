@@ -12,7 +12,6 @@ import java.nio.ByteBuffer;
 
 public class MetalDrawContext extends DrawContext {
     private MetalRenderPass metalPass;
-    private GpuBufferSlice pushConstantsBufferSlice;
 
     @Override
     public void setContext(RenderPass pass, RenderPipeline pipeline) {
@@ -26,17 +25,18 @@ public class MetalDrawContext extends DrawContext {
         float y = MetalDrawContext.getCameraTranslation(region.getOriginY(), camera.intY, camera.fracY);
         float z = MetalDrawContext.getCameraTranslation(region.getOriginZ(), camera.intZ, camera.fracZ);
 
+        GpuBufferSlice pushConstantsBufferSlice;
         try (GpuBufferSlice.MappedView mapped = metalPass.allocateTransient(20, 4, GpuBuffer.USAGE_UNIFORM)) {
             ByteBuffer data = mapped.data();
             data.putFloat(0, x);
             data.putFloat(4, y);
             data.putFloat(8, z);
             data.putInt(12, Math.toIntExact(System.currentTimeMillis() - region.getCreationTime()));
-            data.putInt(16, (int) region.getId());
-            this.pushConstantsBufferSlice = mapped.slice();
+            data.putInt(16, region.getId());
+            pushConstantsBufferSlice = mapped.slice();
         }
 
-        this.metalPass.setUniform("push_constants", this.pushConstantsBufferSlice);
+        this.metalPass.setUniform("push_constants", pushConstantsBufferSlice);
     }
 
     @Override

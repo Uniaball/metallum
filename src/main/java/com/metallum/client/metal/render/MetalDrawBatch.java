@@ -30,18 +30,18 @@ public final class MetalDrawBatch extends MultiDrawBatch {
 
     @Override
     public void put(int size, int elementCount, int baseVertex, long elementOffset) {
-        MemoryIntrinsics.putInt(this.pElementCount + (long) (size << 2), UInt32.uncheckedDowncast(elementCount));
-        MemoryIntrinsics.putInt(this.pBaseVertex + (long) (size << 2), UInt32.uncheckedDowncast(baseVertex));
-        MemoryIntrinsics.putAddress(this.pElementPointer + (long) (size << Pointer.POINTER_SHIFT), elementOffset << 2);
+        MemoryIntrinsics.putInt(this.pElementCount + ((long) size << 2), UInt32.uncheckedDowncast(elementCount));
+        MemoryIntrinsics.putInt(this.pBaseVertex + ((long) size << 2), UInt32.uncheckedDowncast(baseVertex));
+        MemoryIntrinsics.putAddress(this.pElementPointer + ((long) size << Pointer.POINTER_SHIFT), elementOffset << 2);
     }
 
     @Override
     public void draw(DrawContext context) {
         context.getPass().multiDrawIndexed(
-            MemoryUtil.memPointerBuffer(this.pElementPointer, this.size),
-            MemoryUtil.memIntBuffer(this.pElementCount, this.size),
-            MemoryUtil.memIntBuffer(this.pBaseVertex, this.size),
-            this.size
+                MemoryUtil.memPointerBuffer(this.pElementPointer, this.size),
+                MemoryUtil.memIntBuffer(this.pElementCount, this.size),
+                MemoryUtil.memIntBuffer(this.pBaseVertex, this.size),
+                this.size
         );
     }
 

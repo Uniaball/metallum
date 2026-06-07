@@ -1,5 +1,7 @@
 package com.metallum.client.metal.render.bridge;
 
+import com.metallum.client.metal.render.mtl.MTLCompareFunction;
+import com.metallum.client.metal.render.mtl.MTLPixelFormat;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
@@ -633,9 +635,9 @@ public final class MetalNativeBridge {
         }
     }
 
-    public MemorySegment MTLDevice_makeDepthStencilState(final MemorySegment device, final long depthCompareOp, final int writeDepth) {
+    public MemorySegment MTLDevice_makeDepthStencilState(final MemorySegment device, final MTLCompareFunction depthCompareOp, final int writeDepth) {
         try {
-            return (MemorySegment) this.MTLDeviceMakeDepthStencilState.invokeExact(segment(device), depthCompareOp, writeDepth);
+            return (MemorySegment) this.MTLDeviceMakeDepthStencilState.invokeExact(segment(device), depthCompareOp.value, writeDepth);
         } catch (Throwable throwable) {
             throw bridgeFailure("metallum_MTLDevice_makeDepthStencilState", throwable);
         }
@@ -939,12 +941,12 @@ public final class MetalNativeBridge {
 
     public void metallum_MTLRenderPipelineDescriptor_setAttachmentFormats(
             final MemorySegment desc,
-            final long colorFormat,
-            final long depthFormat,
-            final long stencilFormat
+            final MTLPixelFormat colorFormat,
+            final MTLPixelFormat depthFormat,
+            final MTLPixelFormat stencilFormat
     ) {
         try {
-            this.MTLRenderPipelineDescriptorSetAttachmentFormats.invokeExact(segment(desc), colorFormat, depthFormat, stencilFormat);
+            this.MTLRenderPipelineDescriptorSetAttachmentFormats.invokeExact(segment(desc), colorFormat.value, depthFormat.value, stencilFormat.value);
         } catch (Throwable throwable) {
             throw bridgeFailure("metallum_MTLRenderPipelineDescriptor_setAttachmentFormats", throwable);
         }

@@ -40,7 +40,7 @@ public final class MTLRenderPipelineDescriptor implements AutoCloseable {
         );
     }
 
-    public void setAttachmentFormats(final long colorFormat, final long depthFormat, final long stencilFormat) {
+    public void setAttachmentFormats(final MTLPixelFormat colorFormat, final MTLPixelFormat depthFormat, final MTLPixelFormat stencilFormat) {
         MetalNativeBridge.INSTANCE.metallum_MTLRenderPipelineDescriptor_setAttachmentFormats(
                 this.handle,
                 colorFormat,

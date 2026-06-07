@@ -33,17 +33,4 @@ final class MetalPipelineSupport {
         }
         return names;
     }
-
-    static long toCompareOpCode(final com.mojang.blaze3d.platform.CompareOp op) {
-        return switch (op) {
-            case ALWAYS_PASS -> 1L;
-            case LESS_THAN -> 2L;
-            case LESS_THAN_OR_EQUAL -> 3L;
-            case EQUAL -> 4L;
-            case NOT_EQUAL -> 5L;
-            case GREATER_THAN_OR_EQUAL -> 6L;
-            case GREATER_THAN -> 7L;
-            case NEVER_PASS -> 8L;
-        };
-    }
 }

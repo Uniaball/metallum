@@ -6,7 +6,7 @@ import simd
 
 private struct DepthStencilKey: Hashable {
     let deviceAddress: UInt
-    let compareOp: UInt64
+    let compareOp: MTLCompareFunction
     let writeDepth: Bool
 }
 
@@ -61,31 +61,6 @@ private func textureSliceCount(_ texture: MTLTexture) -> Int {
         return max(texture.arrayLength, 1) * 6
     default:
         return 1
-    }
-}
-
-private func blendOperation(from code: UInt64) -> MTLBlendOperation {
-    switch code {
-    case 0: return .add
-    case 1: return .subtract
-    case 2: return .reverseSubtract
-    case 3: return .min
-    case 4: return .max
-    default: return .add
-    }
-}
-
-private func compareFunction(from code: UInt64) -> MTLCompareFunction {
-    switch code {
-    case 1: return .always
-    case 2: return .less
-    case 3: return .lessEqual
-    case 4: return .equal
-    case 5: return .notEqual
-    case 6: return .greaterEqual
-    case 7: return .greater
-    case 8: return .never
-    default: return .always
     }
 }
 
@@ -359,14 +334,14 @@ public func metallum_init_pipelines(_ device: MTLDevice) {
 }
 
 
-private func ensureDepthStencilState(device: MTLDevice, compareOp: UInt64, writeDepth: Bool) -> MTLDepthStencilState? {
+private func ensureDepthStencilState(device: MTLDevice, compareOp: MTLCompareFunction, writeDepth: Bool) -> MTLDepthStencilState? {
     return withMetalAutoreleasePool {
     let key = DepthStencilKey(deviceAddress: objectAddress(device), compareOp: compareOp, writeDepth: writeDepth)
     if let cached = NativeState.depthStencilStates[key] {
         return cached
     }
     let descriptor = MTLDepthStencilDescriptor()
-    descriptor.depthCompareFunction = compareFunction(from: compareOp)
+    descriptor.depthCompareFunction = compareOp
     descriptor.isDepthWriteEnabled = writeDepth
     let state = device.makeDepthStencilState(descriptor: descriptor)
     if let state {
@@ -844,7 +819,7 @@ public func metallum_create_sampler(
 @_cdecl("metallum_MTLDevice_makeDepthStencilState")
 public func metallum_MTLDevice_makeDepthStencilState(
     _ device: MTLDevice,
-    _ depthCompareOp: UInt64,
+    _ depthCompareOp: MTLCompareFunction,
     _ writeDepth: Int32
 ) -> UnsafeMutableRawPointer? {
     withMetalAutoreleasePool {
@@ -1146,7 +1121,7 @@ public func metallum_MTLCommandBuffer_clearColorDepthTexturesRegion(
     if !fullRegion {
         guard
             let pipeline = ensureClearColorDepthPipeline(commandBuffer.device, colorTexture.pixelFormat, depthTexture.pixelFormat),
-            let depthState = ensureDepthStencilState(device: commandBuffer.device, compareOp: 1, writeDepth: true)
+            let depthState = ensureDepthStencilState(device: commandBuffer.device, compareOp: MTLCompareFunction.always, writeDepth: true)
         else {
             encoder.endEncoding()
             return
@@ -1312,15 +1287,15 @@ public func metallum_MTLVertexDescriptor_create() -> UnsafeMutableRawPointer? {
 @_cdecl("metallum_MTLVertexDescriptor_setAttribute")
 public func metallum_MTLVertexDescriptor_setAttribute(
     _ desc: MTLVertexDescriptor,
-    _ index: Int64,
+    _ index: Int,
     _ format: MTLVertexFormat,
-    _ offset: Int64,
-    _ bufferIndex: Int64
+    _ offset: Int,
+    _ bufferIndex: Int
 ) {
     withMetalAutoreleasePool {
-        desc.attributes[Int(index)].format = format
-        desc.attributes[Int(index)].offset = Int(offset)
-        desc.attributes[Int(index)].bufferIndex = Int(bufferIndex)
+        desc.attributes[index].format = format
+        desc.attributes[index].offset = offset
+        desc.attributes[index].bufferIndex = bufferIndex
     }
 }
 
@@ -1333,9 +1308,9 @@ public func metallum_MTLVertexDescriptor_setLayout(
     _ stepRate: Int
 ) {
     withMetalAutoreleasePool {
-        desc.layouts[Int(bufferIndex)].stride = stride
-        desc.layouts[Int(bufferIndex)].stepFunction = stepFunction
-        desc.layouts[Int(bufferIndex)].stepRate = stepRate
+        desc.layouts[bufferIndex].stride = stride
+        desc.layouts[bufferIndex].stepFunction = stepFunction
+        desc.layouts[bufferIndex].stepRate = stepRate
     }
 }
 
@@ -1414,10 +1389,10 @@ public func metallum_MTLRenderPipelineDescriptor_setBlendState(
     _ enabled: Int32,
     _ srcRgb: MTLBlendFactor,
     _ dstRgb: MTLBlendFactor,
-    _ opRgb: UInt64,
+    _ opRgb: MTLBlendOperation,
     _ srcAlpha: MTLBlendFactor,
     _ dstAlpha: MTLBlendFactor,
-    _ opAlpha: UInt64,
+    _ opAlpha: MTLBlendOperation,
     _ writeMask: MTLColorWriteMask
 ) {
     withMetalAutoreleasePool {
@@ -1426,10 +1401,10 @@ public func metallum_MTLRenderPipelineDescriptor_setBlendState(
             desc.colorAttachments[0].isBlendingEnabled = true
             desc.colorAttachments[0].sourceRGBBlendFactor = srcRgb
             desc.colorAttachments[0].destinationRGBBlendFactor = dstRgb
-            desc.colorAttachments[0].rgbBlendOperation = blendOperation(from: opRgb)
+            desc.colorAttachments[0].rgbBlendOperation = opRgb
             desc.colorAttachments[0].sourceAlphaBlendFactor = srcAlpha
             desc.colorAttachments[0].destinationAlphaBlendFactor = dstAlpha
-            desc.colorAttachments[0].alphaBlendOperation = blendOperation(from: opAlpha)
+            desc.colorAttachments[0].alphaBlendOperation = opAlpha
         } else {
             desc.colorAttachments[0].isBlendingEnabled = false
         }

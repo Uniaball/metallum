@@ -15,7 +15,9 @@ import org.jspecify.annotations.Nullable;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.spvc.Spv;
 import org.lwjgl.util.spvc.Spvc;
+import org.lwjgl.util.spvc.SpvcReflectedResource;
 
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
@@ -245,9 +247,9 @@ final class MetalCrossShaderCompiler {
                 checkSpvc(Spvc.spvc_resources_get_resource_list_for_type(resources, Spvc.SPVC_RESOURCE_TYPE_PUSH_CONSTANT, pList, pCount), "spvc_resources_get_resource_list_for_type");
                 long count = pCount.get(0);
                 if (count > 0) {
-                    org.lwjgl.util.spvc.SpvcReflectedResource.Buffer list = org.lwjgl.util.spvc.SpvcReflectedResource.create(pList.get(0), (int)count);
+                    SpvcReflectedResource.Buffer list = SpvcReflectedResource.create(pList.get(0), (int) count);
                     int id = list.get(0).id();
-                    Spvc.spvc_compiler_set_decoration(compiler, id, org.lwjgl.util.spvc.Spv.SpvDecorationBinding, 20);
+                    Spvc.spvc_compiler_set_decoration(compiler, id, Spv.SpvDecorationBinding, 20);
                 }
 
                 PointerBuffer pSource = stack.mallocPointer(1);

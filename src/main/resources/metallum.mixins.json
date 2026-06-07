@@ -17,7 +17,8 @@
     "render.PreferredGraphicsApiMixin",
     "sodium.DrawBackendMixin",
     "sodium.DrawContextMixin",
-    "sodium.MultiDrawBatchMixin"
+    "sodium.MultiDrawBatchMixin",
+    "sodium.SodiumPreferredGraphicsApiMixin"
   ],
   "injectors": {
     "defaultRequire": 1
