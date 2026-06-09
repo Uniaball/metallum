@@ -1353,41 +1353,39 @@ public func metallum_MTLRenderPipelineDescriptor_create() -> UnsafeMutableRawPoi
     }
 }
 
-@_cdecl("metallum_MTLRenderPipelineDescriptor_setFunctions")
-public func metallum_MTLRenderPipelineDescriptor_setFunctions(
-    _ desc: MTLRenderPipelineDescriptor,
+@_cdecl("metallum_create_shader_function")
+public func metallum_create_shader_function(
     _ device: MTLDevice,
-    _ vertexSource: UnsafePointer<CChar>?,
-    _ fragmentSource: UnsafePointer<CChar>?,
-    _ vertexEntry: UnsafePointer<CChar>?,
-    _ fragmentEntry: UnsafePointer<CChar>?
-) -> Int32 {
+    _ sourcePtr: UnsafePointer<CChar>?,
+    _ entryPtr: UnsafePointer<CChar>?
+) -> UnsafeMutableRawPointer? {
     return withMetalAutoreleasePool {
-        guard
-            let vertexSource,
-            let fragmentSource,
-            let vertexEntry,
-            let fragmentEntry
-        else {
-            return 0
+        guard let sourcePtr, let entryPtr else {
+            return nil
         }
         do {
-            let vertexLibrary = try device.makeLibrary(source: String(cString: vertexSource), options: nil)
-            let fragmentLibrary = try device.makeLibrary(source: String(cString: fragmentSource), options: nil)
-            guard
-                let vertexFunction = vertexLibrary.makeFunction(name: String(cString: vertexEntry)),
-                let fragmentFunction = fragmentLibrary.makeFunction(name: String(cString: fragmentEntry))
-            else {
-                NSLog("[metallum] Failed to resolve MSL entry points v='%s' f='%s'", vertexEntry, fragmentEntry)
-                return 0
+            let library = try device.makeLibrary(source: String(cString: sourcePtr), options: nil)
+            guard let function = library.makeFunction(name: String(cString: entryPtr)) else {
+                NSLog("[metallum] Failed to resolve MSL entry point '%s'", entryPtr)
+                return nil
             }
-            desc.vertexFunction = vertexFunction
-            desc.fragmentFunction = fragmentFunction
-            return 1
+            return retainedPointer(function)
         } catch {
             NSLog("[metallum] Failed to compile MSL: %@", String(describing: error))
-            return 0
+            return nil
         }
+    }
+}
+
+@_cdecl("metallum_MTLRenderPipelineDescriptor_setCompiledFunctions")
+public func metallum_MTLRenderPipelineDescriptor_setCompiledFunctions(
+    _ desc: MTLRenderPipelineDescriptor,
+    _ vertexFunction: MTLFunction,
+    _ fragmentFunction: MTLFunction
+) {
+    withMetalAutoreleasePool {
+        desc.vertexFunction = vertexFunction
+        desc.fragmentFunction = fragmentFunction
     }
 }
 

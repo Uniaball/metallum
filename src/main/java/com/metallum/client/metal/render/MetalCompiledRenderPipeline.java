@@ -91,10 +91,13 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         var colorTarget = info.getColorTargetState();
         MTLPixelFormat colorFormat = colorTarget != null ? MTLPixelFormat.from(colorTarget.format()) : MTLPixelFormat.RGBA8Unorm;
 
+        MemorySegment vertexFunction = device.getOrCompileFunction(vertexMsl, vertexEntryPoint);
+        MemorySegment fragmentFunction = device.getOrCompileFunction(fragmentMsl, fragmentEntryPoint);
+
         try (MTLVertexDescriptor vertexDescriptor = buildVertexDescriptor(info, this.firstAvailableVertexBufferSlot)) {
-            this.withoutDepthPipeline = createPipeline(device, info, vertexMsl, fragmentMsl, vertexEntryPoint, fragmentEntryPoint, vertexDescriptor, colorFormat, MTLPixelFormat.Invalid);
+            this.withoutDepthPipeline = createPipeline(device, info, vertexFunction, fragmentFunction, vertexDescriptor, colorFormat, MTLPixelFormat.Invalid);
             if (info.getDepthStencilState() != null) {
-                this.withDepthPipeline = createPipeline(device, info, vertexMsl, fragmentMsl, vertexEntryPoint, fragmentEntryPoint, vertexDescriptor, colorFormat, MTLPixelFormat.Depth32Float);
+                this.withDepthPipeline = createPipeline(device, info, vertexFunction, fragmentFunction, vertexDescriptor, colorFormat, MTLPixelFormat.Depth32Float);
             } else {
                 this.withDepthPipeline = MemorySegment.NULL;
             }
@@ -104,29 +107,21 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
     private static MemorySegment createPipeline(
             final MetalDevice device,
             final RenderPipeline info,
-            final String vertexMsl,
-            final String fragmentMsl,
-            final String vertexEntryPoint,
-            final String fragmentEntryPoint,
+            final MemorySegment vertexFunction,
+            final MemorySegment fragmentFunction,
             final MTLVertexDescriptor vertexDescriptor,
             final MTLPixelFormat colorFormat,
             final MTLPixelFormat depthFormat
     ) {
+        if (MetalNativeBridge.isNullHandle(vertexFunction) || MetalNativeBridge.isNullHandle(fragmentFunction)) {
+            return MemorySegment.NULL;
+        }
+
         var colorTarget = info.getColorTargetState();
         var blendFunction = colorTarget.blendFunction();
 
         try (MTLRenderPipelineDescriptor pipelineDesc = new MTLRenderPipelineDescriptor()) {
-            boolean success = pipelineDesc.setFunctions(
-                    device.metalDeviceHandle(),
-                    vertexMsl,
-                    fragmentMsl,
-                    vertexEntryPoint,
-                    fragmentEntryPoint
-            );
-            if (!success) {
-                return MemorySegment.NULL;
-            }
-
+            pipelineDesc.setCompiledFunctions(vertexFunction, fragmentFunction);
             pipelineDesc.setVertexDescriptor(vertexDescriptor);
             pipelineDesc.setAttachmentFormats(colorFormat, depthFormat, MTLPixelFormat.Invalid);
 

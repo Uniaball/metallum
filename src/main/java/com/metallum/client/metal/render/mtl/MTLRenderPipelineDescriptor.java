@@ -16,20 +16,11 @@ public final class MTLRenderPipelineDescriptor implements AutoCloseable {
         return this.handle;
     }
 
-    public boolean setFunctions(
-            final MemorySegment deviceHandle,
-            final String vertexSource,
-            final String fragmentSource,
-            final String vertexEntry,
-            final String fragmentEntry
-    ) {
-        return MetalNativeBridge.metallum_MTLRenderPipelineDescriptor_setFunctions(
+    public void setCompiledFunctions(final MemorySegment vertexFunction, final MemorySegment fragmentFunction) {
+        MetalNativeBridge.metallum_MTLRenderPipelineDescriptor_setCompiledFunctions(
                 this.handle,
-                deviceHandle,
-                vertexSource,
-                fragmentSource,
-                vertexEntry,
-                fragmentEntry
+                vertexFunction,
+                fragmentFunction
         );
     }
 

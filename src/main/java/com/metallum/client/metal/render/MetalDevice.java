@@ -38,6 +38,7 @@ final class MetalDevice implements GpuDeviceBackend {
     public final MTLCommandQueue commandQueue;
     private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new IdentityHashMap<>();
     private final Map<ShaderCompilationKey, IntermediaryShaderModule> shaderCache = new HashMap<>();
+    private final Map<MslFunctionKey, MemorySegment> functionCache = new HashMap<>();
     private volatile ShaderSource activeShaderSource;
 
     MetalDevice(
@@ -160,6 +161,12 @@ final class MetalDevice implements GpuDeviceBackend {
         this.compiledPipelines.clear();
         this.shaderCache.values().forEach(IntermediaryShaderModule::close);
         this.shaderCache.clear();
+        for (MemorySegment function : this.functionCache.values()) {
+            if (!MetalNativeBridge.isNullHandle(function)) {
+                MetalNativeBridge.metallum_release_object(function);
+            }
+        }
+        this.functionCache.clear();
     }
 
     @Override
@@ -222,7 +229,17 @@ final class MetalDevice implements GpuDeviceBackend {
         });
     }
 
+    MemorySegment getOrCompileFunction(final String msl, final String entryPoint) {
+        return this.functionCache.computeIfAbsent(
+                new MslFunctionKey(msl, entryPoint),
+                key -> MetalNativeBridge.metallum_create_shader_function(this.metalDeviceHandle, key.msl(), key.entryPoint())
+        );
+    }
+
     private record ShaderCompilationKey(Identifier id, ShaderType type, ShaderDefines defines) {
+    }
+
+    private record MslFunctionKey(String msl, String entryPoint) {
     }
 
     private static DeviceInfo buildDeviceInfo(final String deviceName) {

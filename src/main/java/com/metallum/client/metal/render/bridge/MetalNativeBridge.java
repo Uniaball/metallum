@@ -183,10 +183,15 @@ public final class MetalNativeBridge {
                     "metallum_MTLRenderPipelineDescriptor_create",
                     FunctionDescriptor.of(ValueLayout.ADDRESS)
             );
-            MTLRenderPipelineDescriptorSetFunctions = downcall(
+            createShaderFunction = downcallWithoutCritical(
                     lookup,
-                    "metallum_MTLRenderPipelineDescriptor_setFunctions",
-                    FunctionDescriptor.of(INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                    "metallum_create_shader_function",
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+            );
+            MTLRenderPipelineDescriptorSetCompiledFunctions = downcall(
+                    lookup,
+                    "metallum_MTLRenderPipelineDescriptor_setCompiledFunctions",
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
             );
             MTLRenderPipelineDescriptorSetVertexDescriptor = downcall(
                     lookup,
@@ -269,7 +274,8 @@ public final class MetalNativeBridge {
     private static final MethodHandle MTLVertexDescriptorSetAttribute;
     private static final MethodHandle MTLVertexDescriptorSetLayout;
     private static final MethodHandle MTLRenderPipelineDescriptorCreate;
-    private static final MethodHandle MTLRenderPipelineDescriptorSetFunctions;
+    private static final MethodHandle createShaderFunction;
+    private static final MethodHandle MTLRenderPipelineDescriptorSetCompiledFunctions;
     private static final MethodHandle MTLRenderPipelineDescriptorSetVertexDescriptor;
     private static final MethodHandle MTLRenderPipelineDescriptorSetAttachmentFormats;
     private static final MethodHandle MTLRenderPipelineDescriptorSetBlendState;
@@ -937,26 +943,35 @@ public final class MetalNativeBridge {
         }
     }
 
-    public static boolean metallum_MTLRenderPipelineDescriptor_setFunctions(
-            final MemorySegment desc,
+    public static MemorySegment metallum_create_shader_function(
             final MemorySegment device,
-            final String vertexSource,
-            final String fragmentSource,
-            final String vertexEntry,
-            final String fragmentEntry
+            final String source,
+            final String entryPoint
     ) {
         try (Arena arena = Arena.ofConfined()) {
-            int result = (int) MTLRenderPipelineDescriptorSetFunctions.invokeExact(
-                    segment(desc),
+            return (MemorySegment) createShaderFunction.invokeExact(
                     segment(device),
-                    toCString(arena, vertexSource),
-                    toCString(arena, fragmentSource),
-                    toCString(arena, vertexEntry),
-                    toCString(arena, fragmentEntry)
+                    toCString(arena, source),
+                    toCString(arena, entryPoint)
             );
-            return result != 0;
         } catch (Throwable throwable) {
-            throw bridgeFailure("metallum_MTLRenderPipelineDescriptor_setFunctions", throwable);
+            throw bridgeFailure("metallum_create_shader_function", throwable);
+        }
+    }
+
+    public static void metallum_MTLRenderPipelineDescriptor_setCompiledFunctions(
+            final MemorySegment desc,
+            final MemorySegment vertexFunction,
+            final MemorySegment fragmentFunction
+    ) {
+        try {
+            MTLRenderPipelineDescriptorSetCompiledFunctions.invokeExact(
+                    segment(desc),
+                    segment(vertexFunction),
+                    segment(fragmentFunction)
+            );
+        } catch (Throwable throwable) {
+            throw bridgeFailure("metallum_MTLRenderPipelineDescriptor_setCompiledFunctions", throwable);
         }
     }
 
