@@ -96,11 +96,7 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
 
         try (MTLVertexDescriptor vertexDescriptor = buildVertexDescriptor(info, this.firstAvailableVertexBufferSlot)) {
             this.withoutDepthPipeline = createPipeline(device, info, vertexFunction, fragmentFunction, vertexDescriptor, colorFormat, MTLPixelFormat.Invalid);
-            if (info.getDepthStencilState() != null) {
-                this.withDepthPipeline = createPipeline(device, info, vertexFunction, fragmentFunction, vertexDescriptor, colorFormat, MTLPixelFormat.Depth32Float);
-            } else {
-                this.withDepthPipeline = MemorySegment.NULL;
-            }
+            this.withDepthPipeline = createPipeline(device, info, vertexFunction, fragmentFunction, vertexDescriptor, colorFormat, MTLPixelFormat.Depth32Float);
         }
     }
 

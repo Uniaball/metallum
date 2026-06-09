@@ -190,6 +190,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             }
         }
 
+        castTexture(colorTexture.texture()).markContentsDirty();
+        if (depthTexture != null) {
+            castTexture(depthTexture.texture()).markContentsDirty();
+        }
+
         assert descriptor.renderArea != null;
         RenderPass.RenderArea renderArea = descriptor.renderArea;
         MetalRenderPass renderPass = new MetalRenderPass(
@@ -261,6 +266,8 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             pendingDepthClears.put(depth, clearDepth);
             return;
         }
+        color.markContentsDirty();
+        depth.markContentsDirty();
         submitRenderPass();
         endEncoder();
         commandBuffer().clearColorDepthTexturesRegion(
@@ -330,7 +337,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             final int height
     ) {
         MetalGpuTexture metalDst = (MetalGpuTexture) destination;
-        flushPendingClear(metalDst);
+        flushPendingClearForWrite(metalDst);
 
         int pixelSize = metalDst.pixelSize();
         int rowBytes = width * pixelSize;
@@ -370,7 +377,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             final int arrayLayer
     ) {
         MetalGpuTexture metalDst = (MetalGpuTexture) destination;
-        flushPendingClear(metalDst);
+        flushPendingClearForWrite(metalDst);
 
         int texelSize = destination.getFormat().blockSize();
         long skipBytes = (sourceX + (long) sourceY * sourceWidth) * texelSize;
@@ -451,7 +458,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         MetalGpuTexture srcTexture = castTexture(source);
         MetalGpuTexture dstTexture = castTexture(destination);
         flushPendingClear(srcTexture);
-        flushPendingClear(dstTexture);
+        flushPendingClearForWrite(dstTexture);
         MTLBlitCommandEncoder blit = blitCommandEncoder();
         blit.copyFromTextureToTexture(
                 srcTexture.nativeHandle(),
@@ -532,10 +539,19 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         return (MetalGpuTexture) texture;
     }
 
+    private void flushPendingClearForWrite(final MetalGpuTexture texture) {
+        flushPendingClear(texture);
+        texture.markContentsDirty();
+    }
+
     void flushPendingClear(final MetalGpuTexture texture) {
         Vector4fc colorClear = pendingColorClears.remove(texture);
         Double depthClear = pendingDepthClears.remove(texture);
         if (colorClear == null && depthClear == null) {
+            return;
+        }
+
+        if (texture.clearIsRedundant(colorClear, depthClear)) {
             return;
         }
 
@@ -554,6 +570,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         );
         encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment);
         currentEncoder = encoder;
+        texture.recordMaterializedClear(colorClear, depthClear);
     }
 
     private static boolean isFullTextureView(final GpuTextureView textureView) {

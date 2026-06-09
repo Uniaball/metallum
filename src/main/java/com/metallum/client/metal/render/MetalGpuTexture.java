@@ -6,6 +6,7 @@ import com.metallum.client.metal.render.mtl.MTLStorageMode;
 import com.metallum.client.metal.render.mtl.MTLTextureUsage;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.textures.GpuTexture;
+import org.joml.Vector4fc;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
@@ -17,6 +18,10 @@ final class MetalGpuTexture extends GpuTexture {
     private final MetalDevice device;
     private final MTLPixelFormat mtlPixelFormat;
     private boolean closed;
+    @Nullable
+    private Vector4fc materializedColorClear;
+    @Nullable
+    private Double materializedDepthClear;
     private int views = 1;
     @Nullable
     private MemorySegment nativeHandle;
@@ -51,6 +56,25 @@ final class MetalGpuTexture extends GpuTexture {
 
     int pixelSize() {
         return this.getFormat().blockSize();
+    }
+
+    void recordMaterializedClear(@Nullable final Vector4fc color, @Nullable final Double depth) {
+        if (color != null) {
+            this.materializedColorClear = color;
+        }
+        if (depth != null) {
+            this.materializedDepthClear = depth;
+        }
+    }
+
+    boolean clearIsRedundant(@Nullable final Vector4fc color, @Nullable final Double depth) {
+        return (color == null || color.equals(this.materializedColorClear))
+                && (depth == null || depth.equals(this.materializedDepthClear));
+    }
+
+    void markContentsDirty() {
+        this.materializedColorClear = null;
+        this.materializedDepthClear = null;
     }
 
     MemorySegment nativeHandle() {

@@ -249,7 +249,6 @@ final class MetalDevice implements GpuDeviceBackend {
         String osVersion = System.getProperty("os.version", "").trim();
         String driverDescription = "macOS " + osVersion;
         long maxMemoryAllocationSize = MetalNativeBridge.MTLDevice_maxMemoryAllocationSize(metalDeviceHandle);
-        Metallum.LOGGER.warn("{}", maxMemoryAllocationSize);
         return new DeviceInfo(
                 deviceName,
                 "Apple",
