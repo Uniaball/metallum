@@ -472,6 +472,11 @@ public func metallum_set_debug_labels_enabled(_ enabled: Int32) {
     NativeState.debugLabelsEnabled = enabled != 0
 }
 
+@_cdecl("metallum_MTLDevice_maxMemoryAllocationSize")
+public func metallum_MTLDevice_maxMemoryAllocationSize(_ device: MTLDevice) -> UInt64 {
+    min(UInt64(device.maxBufferLength), device.recommendedMaxWorkingSetSize)
+}
+
 @_cdecl("metallum_MTLDevice_makeCommandQueue")
 public func metallum_MTLDevice_makeCommandQueue(_ device: MTLDevice) -> UnsafeMutableRawPointer? {
     return withMetalAutoreleasePool {
@@ -1054,6 +1059,55 @@ public func metallum_MTLRenderCommandEncoder_multiDrawIndexed(
     }
 }
 
+
+@_cdecl("metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect")
+public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(
+    _ encoder: MTLRenderCommandEncoder,
+    _ primitiveType: MTLPrimitiveType,
+    _ indexType: MTLIndexType,
+    _ indexBuffer: MTLBuffer,
+    _ indirectBuffer: MTLBuffer,
+    _ indirectBufferOffset: UInt64,
+    _ drawCount: Int,
+    _ stride: UInt64
+) {
+    withMetalAutoreleasePool {
+        var offset = Int(indirectBufferOffset)
+        for _ in 0..<drawCount {
+            encoder.drawIndexedPrimitives(
+                type: primitiveType,
+                indexType: indexType,
+                indexBuffer: indexBuffer,
+                indexBufferOffset: 0,
+                indirectBuffer: indirectBuffer,
+                indirectBufferOffset: offset
+            )
+            offset += Int(stride)
+        }
+    }
+}
+
+@_cdecl("metallum_MTLRenderCommandEncoder_drawPrimitivesIndirect")
+public func metallum_MTLRenderCommandEncoder_drawPrimitivesIndirect(
+    _ encoder: MTLRenderCommandEncoder,
+    _ primitiveType: MTLPrimitiveType,
+    _ indirectBuffer: MTLBuffer,
+    _ indirectBufferOffset: UInt64,
+    _ drawCount: Int,
+    _ stride: UInt64
+) {
+    withMetalAutoreleasePool {
+        var offset = Int(indirectBufferOffset)
+        for _ in 0..<drawCount {
+            encoder.drawPrimitives(
+                type: primitiveType,
+                indirectBuffer: indirectBuffer,
+                indirectBufferOffset: offset
+            )
+            offset += Int(stride)
+        }
+    }
+}
 
 @_cdecl("metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan")
 public func metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan(

@@ -12,7 +12,7 @@ public class DrawBackendMixin {
     @Inject(method = "chooseBackend", at = @At("HEAD"), cancellable = true, remap = false)
     private static void metallum$chooseMetalBackend(CallbackInfoReturnable<DrawBackend> cir) {
         if (RenderSystem.getDevice().getDeviceInfo().backendName().equals("Metal")) {
-            cir.setReturnValue(DrawBackend.VK_MULTIDRAW);
+            cir.setReturnValue(DrawBackend.VK_INDIRECT);
         }
     }
 }

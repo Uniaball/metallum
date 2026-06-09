@@ -61,6 +61,14 @@ public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
         MetalNativeBridge.MTLRenderCommandEncoder_drawIndexedPrimitives(handle(), primitiveType.value, indexCount, indexType.value, indexBuffer, offset, instanceCount, baseVertex);
     }
 
+    public void drawIndexedPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLIndexType indexType, final MemorySegment indexBuffer, final MemorySegment indirectBuffer, final long indirectBufferOffset, final int drawCount, final long stride) {
+        MetalNativeBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(handle(), primitiveType.value, indexType.value, indexBuffer, indirectBuffer, indirectBufferOffset, drawCount, stride);
+    }
+
+    public void drawPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MemorySegment indirectBuffer, final long indirectBufferOffset, final int drawCount, final long stride) {
+        MetalNativeBridge.MTLRenderCommandEncoder_drawPrimitivesIndirect(handle(), primitiveType.value, indirectBuffer, indirectBufferOffset, drawCount, stride);
+    }
+
     public void drawIndexedPrimitivesTriangleFan(final MemorySegment indexBuffer, final MemorySegment fanIndexBuffer, final long fanIndexBufferOffset, final long indexType, final long offset, final int indexCount, final int baseVertex, final int instanceCount) {
         MetalNativeBridge.MTLRenderCommandEncoder_drawIndexedPrimitivesTriangleFan(handle(), indexBuffer, fanIndexBuffer, fanIndexBufferOffset, indexType, offset, indexCount, baseVertex, instanceCount);
     }

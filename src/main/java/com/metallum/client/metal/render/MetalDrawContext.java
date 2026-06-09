@@ -4,13 +4,13 @@ import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderPass;
-import net.caffeinemc.mods.sodium.client.gpu.device.context.DrawContext;
+import net.caffeinemc.mods.sodium.client.gpu.device.context.VKIndirectContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 
 import java.nio.ByteBuffer;
 
-public class MetalDrawContext extends DrawContext {
+public final class MetalDrawContext extends VKIndirectContext {
     private MetalRenderPass metalPass;
 
     @Override
@@ -21,9 +21,9 @@ public class MetalDrawContext extends DrawContext {
 
     @Override
     public void updateData(RenderRegion region, CameraTransform camera) {
-        float x = MetalDrawContext.getCameraTranslation(region.getOriginX(), camera.intX, camera.fracX);
-        float y = MetalDrawContext.getCameraTranslation(region.getOriginY(), camera.intY, camera.fracY);
-        float z = MetalDrawContext.getCameraTranslation(region.getOriginZ(), camera.intZ, camera.fracZ);
+        float x = getCameraTranslation(region.getOriginX(), camera.intX, camera.fracX);
+        float y = getCameraTranslation(region.getOriginY(), camera.intY, camera.fracY);
+        float z = getCameraTranslation(region.getOriginZ(), camera.intZ, camera.fracZ);
 
         GpuBufferSlice pushConstantsBufferSlice;
         try (GpuBufferSlice.MappedView mapped = metalPass.allocateTransient(20, 4, GpuBuffer.USAGE_UNIFORM)) {
@@ -37,17 +37,5 @@ public class MetalDrawContext extends DrawContext {
         }
 
         this.metalPass.setUniform("push_constants", pushConstantsBufferSlice);
-    }
-
-    @Override
-    public void rotate() {
-    }
-
-    @Override
-    public void delete() {
-    }
-
-    @Override
-    public void endDraw() {
     }
 }

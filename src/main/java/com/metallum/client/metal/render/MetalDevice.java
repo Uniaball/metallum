@@ -1,5 +1,6 @@
 package com.metallum.client.metal.render;
 
+import com.metallum.Metallum;
 import com.metallum.client.metal.render.bridge.MetalNativeBridge;
 import com.metallum.client.metal.render.mtl.MTLCommandQueue;
 import com.mojang.blaze3d.GpuFormat;
@@ -242,11 +243,13 @@ final class MetalDevice implements GpuDeviceBackend {
     private record MslFunctionKey(String msl, String entryPoint) {
     }
 
-    private static DeviceInfo buildDeviceInfo(final String deviceName) {
+    private DeviceInfo buildDeviceInfo(final String deviceName) {
         DeviceType type = DeviceType.INTEGRATED;
         Set<String> underlyingExtensions = Set.of("CAMetalLayer", "MTLDevice");
         String osVersion = System.getProperty("os.version", "").trim();
         String driverDescription = "macOS " + osVersion;
+        long maxMemoryAllocationSize = MetalNativeBridge.MTLDevice_maxMemoryAllocationSize(metalDeviceHandle);
+        Metallum.LOGGER.warn("{}", maxMemoryAllocationSize);
         return new DeviceInfo(
                 deviceName,
                 "Apple",
@@ -254,8 +257,8 @@ final class MetalDevice implements GpuDeviceBackend {
                 true,
                 "Metal",
                 1.0F,
-                new DeviceLimits(16, 256, 16384, 1L << 30, 0, 1),
-                new DeviceFeatures(false, false, true, false, false, false, true),
+                new DeviceLimits(16, 256, 16384, maxMemoryAllocationSize, 0, 1),
+                new DeviceFeatures(false, false, true, true, true, false, true),
                 underlyingExtensions,
                 new HintsAndWorkarounds(false, false),
                 type

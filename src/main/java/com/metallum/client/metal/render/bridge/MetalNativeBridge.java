@@ -47,6 +47,7 @@ public final class MetalNativeBridge {
             setDebugLabelsEnabled = downcall(lookup, "metallum_set_debug_labels_enabled", FunctionDescriptor.ofVoid(INT));
             initPipelines = downcall(lookup, "metallum_init_pipelines", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
+            MTLDeviceMaxMemoryAllocationSize = downcall(lookup, "metallum_MTLDevice_maxMemoryAllocationSize", FunctionDescriptor.of(LONG, ValueLayout.ADDRESS));
             MTLDeviceMakeCommandQueue = downcall(lookup, "metallum_MTLDevice_makeCommandQueue", FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
             MTLCommandQueueMakeCommandBuffer = downcall(lookup, "metallum_MTLCommandQueue_makeCommandBuffer", FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
             MTLCommandBufferCommit = downcall(lookup, "metallum_MTLCommandBuffer_commit", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -116,6 +117,16 @@ public final class MetalNativeBridge {
                     lookup,
                     "metallum_MTLRenderCommandEncoder_multiDrawIndexed",
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, LONG, LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, LONG, LONG)
+            );
+            MTLRenderCommandEncoderDrawIndexedPrimitivesIndirect = downcall(
+                    lookup,
+                    "metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect",
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, LONG, LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, LONG, LONG, LONG)
+            );
+            MTLRenderCommandEncoderDrawPrimitivesIndirect = downcall(
+                    lookup,
+                    "metallum_MTLRenderCommandEncoder_drawPrimitivesIndirect",
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, LONG, ValueLayout.ADDRESS, LONG, LONG, LONG)
             );
             MTLRenderCommandEncoderDrawIndexedPrimitivesTriangleFan = downcallWithoutCritical(
                     lookup,
@@ -234,6 +245,7 @@ public final class MetalNativeBridge {
     private static final MethodHandle NSViewSetMetalLayer;
     private static final MethodHandle NSViewClearLayer;
     private static final MethodHandle setDebugLabelsEnabled;
+    private static final MethodHandle MTLDeviceMaxMemoryAllocationSize;
     private static final MethodHandle MTLDeviceMakeCommandQueue;
     private static final MethodHandle MTLCommandQueueMakeCommandBuffer;
     private static final MethodHandle MTLCommandBufferCommit;
@@ -263,6 +275,8 @@ public final class MetalNativeBridge {
     private static final MethodHandle MTLRenderCommandEncoderDrawIndexedPrimitives;
     private static final MethodHandle MTLRenderCommandEncoderMultiDrawIndexed;
     private static final MethodHandle MTLRenderCommandEncoderDrawIndexedPrimitivesTriangleFan;
+    private static final MethodHandle MTLRenderCommandEncoderDrawIndexedPrimitivesIndirect;
+    private static final MethodHandle MTLRenderCommandEncoderDrawPrimitivesIndirect;
     private static final MethodHandle MTLCommandBufferClearColorDepthTexturesRegion;
     private static final MethodHandle MTLCommandBufferEncodePresentTextureToDrawable;
     private static final MethodHandle createBuffer;
@@ -365,6 +379,14 @@ public final class MetalNativeBridge {
         }
     }
 
+
+    public static long MTLDevice_maxMemoryAllocationSize(final MemorySegment device) {
+        try {
+            return (long) MTLDeviceMaxMemoryAllocationSize.invokeExact(segment(device));
+        } catch (Throwable throwable) {
+            throw bridgeFailure("metallum_MTLDevice_maxMemoryAllocationSize", throwable);
+        }
+    }
 
     public static MemorySegment MTLDevice_makeCommandQueue(final MemorySegment device) {
         try {
@@ -832,6 +854,54 @@ public final class MetalNativeBridge {
             );
         } catch (Throwable throwable) {
             throw bridgeFailure("metallum_MTLRenderCommandEncoder_multiDrawIndexed", throwable);
+        }
+    }
+
+    public static void MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect(
+            final MemorySegment encoder,
+            final long primitiveType,
+            final long indexType,
+            final MemorySegment indexBuffer,
+            final MemorySegment indirectBuffer,
+            final long indirectBufferOffset,
+            final long drawCount,
+            final long stride
+    ) {
+        try {
+            MTLRenderCommandEncoderDrawIndexedPrimitivesIndirect.invokeExact(
+                    segment(encoder),
+                    primitiveType,
+                    indexType,
+                    segment(indexBuffer),
+                    segment(indirectBuffer),
+                    indirectBufferOffset,
+                    drawCount,
+                    stride
+            );
+        } catch (Throwable throwable) {
+            throw bridgeFailure("metallum_MTLRenderCommandEncoder_drawIndexedPrimitivesIndirect", throwable);
+        }
+    }
+
+    public static void MTLRenderCommandEncoder_drawPrimitivesIndirect(
+            final MemorySegment encoder,
+            final long primitiveType,
+            final MemorySegment indirectBuffer,
+            final long indirectBufferOffset,
+            final long drawCount,
+            final long stride
+    ) {
+        try {
+            MTLRenderCommandEncoderDrawPrimitivesIndirect.invokeExact(
+                    segment(encoder),
+                    primitiveType,
+                    segment(indirectBuffer),
+                    indirectBufferOffset,
+                    drawCount,
+                    stride
+            );
+        } catch (Throwable throwable) {
+            throw bridgeFailure("metallum_MTLRenderCommandEncoder_drawPrimitivesIndirect", throwable);
         }
     }
 

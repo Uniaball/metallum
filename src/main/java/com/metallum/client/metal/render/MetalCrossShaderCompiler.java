@@ -51,28 +51,19 @@ final class MetalCrossShaderCompiler {
             List<String> vertexOutputs = extractVariableNames(vertexSpirv.outputs());
 
             vertexSpirv.rebind(MetalPipelineSupport.vertexAttributeNames(pipeline), layoutEntries);
-            String vertexMsl = spirvToMsl(vertexSpirv.spirv());
+            MslShader vertexMsl = spirvToMsl(vertexSpirv.spirv(), layoutEntries.size());
 
             fragmentSpirv.rebind(vertexOutputs, layoutEntries);
-            String fragmentMsl = spirvToMsl(fragmentSpirv.spirv());
+            MslShader fragmentMsl = spirvToMsl(fragmentSpirv.spirv(), layoutEntries.size());
 
-            String vertexEntryPoint = extractEntryPoint(vertexMsl, VERTEX_ENTRY_PATTERN, "main0");
-            String fragmentEntryPoint = extractEntryPoint(fragmentMsl, FRAGMENT_ENTRY_PATTERN, "main0");
-            List<MetalCompiledRenderPipeline.ResourceBinding> resources = new ArrayList<>(buildResourceBindings(layoutEntries, vertexMsl, fragmentMsl));
-            if (pipeline.getLocation().getNamespace().contains("sodium")) {
-                resources.add(new MetalCompiledRenderPipeline.ResourceBinding(
-                        MetalCompiledRenderPipeline.ResourceKind.UNIFORM_BUFFER,
-                        "push_constants",
-                        20,
-                        MetalCompiledRenderPipeline.STAGE_ALL,
-                        null
-                ));
-            }
+            String vertexEntryPoint = extractEntryPoint(vertexMsl.source(), VERTEX_ENTRY_PATTERN, "main0");
+            String fragmentEntryPoint = extractEntryPoint(fragmentMsl.source(), FRAGMENT_ENTRY_PATTERN, "main0");
+            List<MetalCompiledRenderPipeline.ResourceBinding> resources = buildResourceBindings(layoutEntries, vertexMsl, fragmentMsl);
             return new MetalCompiledRenderPipeline(
                     device,
                     pipeline,
-                    vertexMsl,
-                    fragmentMsl,
+                    vertexMsl.source(),
+                    fragmentMsl.source(),
                     vertexEntryPoint,
                     fragmentEntryPoint,
                     resources
@@ -157,10 +148,10 @@ final class MetalCrossShaderCompiler {
 
     private static List<MetalCompiledRenderPipeline.ResourceBinding> buildResourceBindings(
             final List<VulkanBindGroupLayout.Entry> entries,
-            final String vertexMsl,
-            final String fragmentMsl
+            final MslShader vertexMsl,
+            final MslShader fragmentMsl
     ) {
-        List<MetalCompiledRenderPipeline.ResourceBinding> resources = new ArrayList<>(entries.size());
+        List<MetalCompiledRenderPipeline.ResourceBinding> resources = new ArrayList<>(entries.size() + 1);
         for (int index = 0; index < entries.size(); index++) {
             VulkanBindGroupLayout.Entry entry = entries.get(index);
             MetalCompiledRenderPipeline.ResourceKind kind = switch (entry.type()) {
@@ -169,7 +160,19 @@ final class MetalCrossShaderCompiler {
                 case TEXEL_BUFFER -> MetalCompiledRenderPipeline.ResourceKind.TEXEL_BUFFER;
             };
             GpuFormat texelFormat = entry.type() == VulkanBindGroupLayout.VulkanBindGroupEntryType.TEXEL_BUFFER ? entry.texelBufferFormat() : null;
-            resources.add(new MetalCompiledRenderPipeline.ResourceBinding(kind, entry.name(), index, stageMask(kind, index, vertexMsl, fragmentMsl), texelFormat));
+            resources.add(new MetalCompiledRenderPipeline.ResourceBinding(kind, entry.name(), index, stageMask(kind, index, vertexMsl.source(), fragmentMsl.source()), texelFormat));
+        }
+
+        int pushConstantStageMask = (vertexMsl.hasPushConstants() ? MetalCompiledRenderPipeline.STAGE_VERTEX : 0)
+                | (fragmentMsl.hasPushConstants() ? MetalCompiledRenderPipeline.STAGE_FRAGMENT : 0);
+        if (pushConstantStageMask != 0) {
+            resources.add(new MetalCompiledRenderPipeline.ResourceBinding(
+                    MetalCompiledRenderPipeline.ResourceKind.UNIFORM_BUFFER,
+                    "push_constants",
+                    entries.size(),
+                    pushConstantStageMask,
+                    null
+            ));
         }
         return resources;
     }
@@ -195,7 +198,7 @@ final class MetalCrossShaderCompiler {
         return mask == 0 ? MetalCompiledRenderPipeline.STAGE_ALL : mask;
     }
 
-    private static String spirvToMsl(final ByteBuffer spirvBytes) throws ShaderCompileException {
+    private static MslShader spirvToMsl(final ByteBuffer spirvBytes, final int pushConstantBinding) throws ShaderCompileException {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             IntBuffer spirvWords = spirvBytes.asIntBuffer();
 
@@ -245,20 +248,22 @@ final class MetalCrossShaderCompiler {
                 PointerBuffer pList = stack.mallocPointer(1);
                 PointerBuffer pCount = stack.mallocPointer(1);
                 checkSpvc(Spvc.spvc_resources_get_resource_list_for_type(resources, Spvc.SPVC_RESOURCE_TYPE_PUSH_CONSTANT, pList, pCount), "spvc_resources_get_resource_list_for_type");
-                long count = pCount.get(0);
-                if (count > 0) {
-                    SpvcReflectedResource.Buffer list = SpvcReflectedResource.create(pList.get(0), (int) count);
-                    int id = list.get(0).id();
-                    Spvc.spvc_compiler_set_decoration(compiler, id, Spv.SpvDecorationBinding, 20);
+                boolean hasPushConstants = pCount.get(0) > 0;
+                if (hasPushConstants) {
+                    SpvcReflectedResource.Buffer list = SpvcReflectedResource.create(pList.get(0), 1);
+                    Spvc.spvc_compiler_set_decoration(compiler, list.get(0).id(), Spv.SpvDecorationBinding, pushConstantBinding);
                 }
 
                 PointerBuffer pSource = stack.mallocPointer(1);
                 checkSpvc(Spvc.spvc_compiler_compile(compiler, pSource), "spvc_compiler_compile");
-                return MemoryUtil.memUTF8(pSource.get(0));
+                return new MslShader(MemoryUtil.memUTF8(pSource.get(0)), hasPushConstants);
             } finally {
                 Spvc.spvc_context_destroy(context);
             }
         }
+    }
+
+    record MslShader(String source, boolean hasPushConstants) {
     }
 
     private static void checkSpvc(final int result, final String stage) throws ShaderCompileException {

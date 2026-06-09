@@ -21,6 +21,8 @@ import org.joml.Vector4fc;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.vulkan.VkDrawIndexedIndirectCommand;
+import org.lwjgl.vulkan.VkDrawIndirectCommand;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.IntBuffer;
@@ -210,7 +212,7 @@ final class MetalRenderPass implements RenderPassBackend {
     @Override
     public void multiDrawIndexed(@NonNull PointerBuffer firstIndexOffsets, @NonNull IntBuffer indexCounts, @NonNull IntBuffer vertexOffsets, int drawCount) {
         MTLPrimitiveType primitiveType = primitiveTopology();
-        if (primitiveType == MTLPrimitiveType.TriangleFan){
+        if (primitiveType == MTLPrimitiveType.TriangleFan) {
             throw new UnsupportedOperationException("Metal backend does not support triangle fan multiDrawIndexed");
         }
 
@@ -233,7 +235,24 @@ final class MetalRenderPass implements RenderPassBackend {
 
     @Override
     public void drawIndexedIndirect(final @NonNull GpuBufferSlice commands, final int drawCount) {
-        throw new UnsupportedOperationException("Metal backend does not support indirect indexed draws yet");
+        MTLPrimitiveType primitiveType = primitiveTopology();
+        if (primitiveType == MTLPrimitiveType.TriangleFan) {
+            throw new UnsupportedOperationException("Metal backend does not support triangle fan indirect draws");
+        }
+
+        MetalGpuBuffer nativeIndexBuffer = resolveIndexBuffer();
+        MTLRenderCommandEncoder enc = renderEncoder();
+        bindDrawState(enc);
+
+        enc.drawIndexedPrimitivesIndirect(
+                primitiveType,
+                indexType,
+                nativeIndexBuffer.nativeHandle(),
+                MetalCommandEncoder.castBuffer(commands.buffer()).nativeHandle(),
+                commands.offset(),
+                drawCount,
+                VkDrawIndexedIndirectCommand.SIZEOF
+        );
     }
 
     @Override
@@ -302,7 +321,21 @@ final class MetalRenderPass implements RenderPassBackend {
 
     @Override
     public void drawIndirect(final @NonNull GpuBufferSlice commands, final int drawCount) {
-        throw new UnsupportedOperationException("Metal backend does not support indirect draws yet");
+        MTLPrimitiveType primitiveType = primitiveTopology();
+        if (primitiveType == MTLPrimitiveType.TriangleFan) {
+            throw new UnsupportedOperationException("Metal backend does not support triangle fan indirect draws");
+        }
+
+        MTLRenderCommandEncoder enc = renderEncoder();
+        bindDrawState(enc);
+
+        enc.drawPrimitivesIndirect(
+                primitiveType,
+                MetalCommandEncoder.castBuffer(commands.buffer()).nativeHandle(),
+                commands.offset(),
+                drawCount,
+                VkDrawIndirectCommand.SIZEOF
+        );
     }
 
     @Override
