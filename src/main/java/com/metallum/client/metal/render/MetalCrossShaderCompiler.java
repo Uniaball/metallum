@@ -30,6 +30,7 @@ import java.util.regex.Pattern;
 
 @Environment(EnvType.CLIENT)
 final class MetalCrossShaderCompiler {
+    private static final Set<String> BUILT_IN_UNIFORMS = Set.of("Projection", "Lighting", "Fog", "Globals");
     private static final int MSL_VERSION_4_0 = 0x040000;
     private static final Pattern VERTEX_ENTRY_PATTERN = Pattern.compile("\\bvertex\\s+\\w+\\s+(\\w+)\\s*\\(");
     private static final Pattern FRAGMENT_ENTRY_PATTERN = Pattern.compile("\\bfragment\\s+\\w+\\s+(\\w+)\\s*\\(");
@@ -52,10 +53,10 @@ final class MetalCrossShaderCompiler {
             addToBindGroup(layoutEntries, fragmentSpirv, pipeline);
             List<String> vertexOutputs = extractVariableNames(vertexSpirv.outputs());
 
-            vertexSpirv.rebind(MetalPipelineSupport.vertexAttributeNames(pipeline), layoutEntries);
+            vertexSpirv.rebind(tolerateUnprovidedInputs(MetalPipelineSupport.vertexAttributeNames(pipeline), vertexSpirv.inputs()), layoutEntries);
             MslShader vertexMsl = spirvToMsl(vertexSpirv.spirv(), layoutEntries.size());
 
-            fragmentSpirv.rebind(vertexOutputs, layoutEntries);
+            fragmentSpirv.rebind(tolerateUnprovidedInputs(vertexOutputs, fragmentSpirv.inputs()), layoutEntries);
             MslShader fragmentMsl = spirvToMsl(fragmentSpirv.spirv(), layoutEntries.size());
 
             String vertexEntryPoint = extractEntryPoint(vertexMsl.source(), VERTEX_ENTRY_PATTERN, "main0");
@@ -84,7 +85,7 @@ final class MetalCrossShaderCompiler {
         List<String> samplers = BindGroupLayout.flattenSamplers(pipeline.getBindGroupLayouts());
         for (SpvUniformBuffer buffer : shader.uniformBuffers()) {
             String name = buffer.name();
-            if (findUniform(uniforms, name) == null) {
+            if (findUniform(uniforms, name) == null && !BUILT_IN_UNIFORMS.contains(name)) {
                 throw new ShaderCompileException("Unable to find shader defined uniform (" + name + ")");
             }
             addBindingIfAbsent(entries, VulkanBindGroupEntryType.UNIFORM_BUFFER, name, null);
@@ -133,6 +134,22 @@ final class MetalCrossShaderCompiler {
             }
         }
         entries.add(new VulkanBindGroupLayout.Entry(type, name, texelBufferFormat));
+    }
+
+    private static List<String> tolerateUnprovidedInputs(final List<String> provided, final List<SpvVariable> shaderInputs) {
+        List<String> result = null;
+        for (SpvVariable input : shaderInputs) {
+            String name = input.name();
+            if (!provided.contains(name)) {
+                if (result == null) {
+                    result = new ArrayList<>(provided);
+                }
+                if (!result.contains(name)) {
+                    result.add(name);
+                }
+            }
+        }
+        return result == null ? provided : result;
     }
 
     private static List<String> extractVariableNames(final List<SpvVariable> variables) {
@@ -241,7 +258,12 @@ final class MetalCrossShaderCompiler {
                 );
                 checkSpvc(Spvc.spvc_compiler_install_compiler_options(compiler, options), "spvc_compiler_install_compiler_options");
 
-                Set<String> activeResources = collectActiveResourceNames(stack, compiler);
+                PointerBuffer pActiveSet = stack.mallocPointer(1);
+                checkSpvc(Spvc.spvc_compiler_get_active_interface_variables(compiler, pActiveSet), "spvc_compiler_get_active_interface_variables");
+                long activeSet = pActiveSet.get(0);
+                checkSpvc(Spvc.spvc_compiler_set_enabled_interface_variables(compiler, activeSet), "spvc_compiler_set_enabled_interface_variables");
+
+                Set<String> activeResources = collectActiveResourceNames(stack, compiler, activeSet);
 
                 PointerBuffer pResources = stack.mallocPointer(1);
                 checkSpvc(Spvc.spvc_compiler_create_shader_resources(compiler, pResources), "spvc_compiler_create_shader_resources");
@@ -268,13 +290,10 @@ final class MetalCrossShaderCompiler {
     record MslShader(String source, boolean hasPushConstants, Set<String> activeResources) {
     }
 
-    private static Set<String> collectActiveResourceNames(final MemoryStack stack, final long compiler) throws ShaderCompileException {
-        PointerBuffer pActiveSet = stack.mallocPointer(1);
-        checkSpvc(Spvc.spvc_compiler_get_active_interface_variables(compiler, pActiveSet), "spvc_compiler_get_active_interface_variables");
-
+    private static Set<String> collectActiveResourceNames(final MemoryStack stack, final long compiler, final long activeSet) throws ShaderCompileException {
         PointerBuffer pResources = stack.mallocPointer(1);
         checkSpvc(
-                Spvc.spvc_compiler_create_shader_resources_for_active_variables(compiler, pResources, pActiveSet.get(0)),
+                Spvc.spvc_compiler_create_shader_resources_for_active_variables(compiler, pResources, activeSet),
                 "spvc_compiler_create_shader_resources_for_active_variables"
         );
         long resources = pResources.get(0);
