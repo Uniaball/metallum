@@ -220,13 +220,18 @@ final class MetalDevice implements GpuDeviceBackend {
             if (source == null) {
                 return IntermediaryShaderModule.INVALID;
             }
-            String sourceWithDefines = GlslPreprocessor.injectDefines(source, k.defines());
+            String sourceWithDefines = prepareShaderSource(source, k.defines());
             try (GlslCompiler glslCompiler = new GlslCompiler()) {
                 return glslCompiler.createIntermediary(k.id().toDebugFileName(), sourceWithDefines, k.type());
             } catch (ShaderCompileException e) {
                 throw new IllegalStateException("Failed to compile shader " + k.id(), e);
             }
         });
+    }
+
+    private static String prepareShaderSource(final String source, final ShaderDefines defines) {
+        String stripped = source.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//[^\\n]*", "").stripLeading();
+        return GlslPreprocessor.injectDefines(stripped, defines);
     }
 
     MemorySegment getOrCompileFunction(final String msl, final String entryPoint) {
