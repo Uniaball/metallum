@@ -37,19 +37,23 @@ tasks.register("buildMacNative", Exec) {
 	workingDir project.projectDir
 	doFirst {
 		file("src/main/resources/natives/macos").mkdirs()
+		file("build/native").mkdirs()
 	}
 
-	commandLine "swiftc",
-		"-O",
-		"-whole-module-optimization",
-		"-emit-library",
-		"-module-name", "metallum_native",
-		"-target", "arm64-apple-macosx14.0",
-		"-framework", "Foundation",
-		"-framework", "Metal",
-		"-framework", "QuartzCore",
-		"-o", "src/main/resources/natives/macos/libmetallum.dylib",
-		"src/main/native/MetallumNative.swift"
+	// Build a per-arch slice for arm64 and x86_64, then lipo them into one
+	// universal dylib. macOS picks the matching slice at load time, so the
+	// same file works on Apple Silicon and Intel Macs.
+	def swiftc = { String target, String out ->
+		"swiftc -O -whole-module-optimization -emit-library " +
+			"-module-name metallum_native -target ${target} " +
+			"-framework Foundation -framework Metal -framework QuartzCore " +
+			"-o ${out} src/main/native/MetallumNative.swift"
+	}
+	commandLine "/bin/sh", "-e", "-c",
+		swiftc("arm64-apple-macosx14.0", "build/native/libmetallum-arm64.dylib") + " && " +
+		swiftc("x86_64-apple-macosx14.0", "build/native/libmetallum-x86_64.dylib") + " && " +
+		"lipo -create build/native/libmetallum-arm64.dylib build/native/libmetallum-x86_64.dylib " +
+		"-output src/main/resources/natives/macos/libmetallum.dylib"
 }
 
 tasks.named("processResources") {
