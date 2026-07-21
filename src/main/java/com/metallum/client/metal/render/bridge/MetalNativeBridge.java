@@ -16,7 +16,17 @@ import java.nio.file.StandardCopyOption;
 
 @Environment(EnvType.CLIENT)
 public final class MetalNativeBridge {
-    private static final String RESOURCE_PATH = "/natives/macos/libmetallum.dylib";
+    private static boolean isIOS() {
+        String osName = System.getProperty("os.name");
+        if (osName != null && (osName.contains("iOS") || osName.contains("iPhone"))) {
+            return true;
+        }
+        String javaVendor = System.getProperty("java.vendor");
+        if (javaVendor != null && javaVendor.contains("pojav")) {
+            return true;
+        }
+        return false;
+    }
     private static final ValueLayout.OfInt INT = ValueLayout.JAVA_INT;
     private static final ValueLayout.OfLong LONG = ValueLayout.JAVA_LONG;
     private static final ValueLayout.OfFloat FLOAT = ValueLayout.JAVA_FLOAT;
@@ -25,11 +35,12 @@ public final class MetalNativeBridge {
 
     static {
         try {
+            final String resourcePath = isIOS() ? "/natives/ios/libmetallum.dylib" : "/natives/macos/libmetallum.dylib";
             Path tempLib = Files.createTempFile("metallum-native-", ".dylib");
             tempLib.toFile().deleteOnExit();
-            try (InputStream stream = MetalNativeBridge.class.getResourceAsStream(RESOURCE_PATH)) {
+            try (InputStream stream = MetalNativeBridge.class.getResourceAsStream(resourcePath)) {
                 if (stream == null) {
-                    throw new IllegalStateException("Missing native library resource: " + RESOURCE_PATH);
+                    throw new IllegalStateException("Missing native library resource: " + resourcePath);
                 }
                 Files.copy(stream, tempLib, StandardCopyOption.REPLACE_EXISTING);
             }
