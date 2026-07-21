@@ -53,16 +53,8 @@ tasks.register("buildMacNative", Exec) {
 }
 
 tasks.register("buildIosNative", Exec) {
-	def sdkPath = (String) null
-	try {
-		def proc = "xcrun --sdk iphoneos --show-sdk-path".execute()
-		proc.waitFor()
-		sdkPath = proc.text.trim()
-	} catch (Exception ignored) {
-	}
-
 	onlyIf {
-		org.gradle.internal.os.OperatingSystem.current().isMacOsX() && sdkPath != null && !sdkPath.isEmpty()
+		org.gradle.internal.os.OperatingSystem.current().isMacOsX()
 	}
 
 	workingDir project.projectDir
@@ -76,7 +68,6 @@ tasks.register("buildIosNative", Exec) {
 		"-emit-library",
 		"-module-name", "metallum_native",
 		"-target", "arm64-apple-ios16.0",
-		"-sdk", sdkPath,
 		"-framework", "Foundation",
 		"-framework", "Metal",
 		"-framework", "QuartzCore",
