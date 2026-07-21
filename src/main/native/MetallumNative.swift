@@ -1157,7 +1157,12 @@ public func metallum_MTLCommandBuffer_clearColorDepthTexturesRegion(
         renderPass.depthAttachment.storeAction = .store
 
         let depthFormat = depthTexture.pixelFormat
-        if depthFormat == .depth24Unorm_stencil8 || depthFormat == .depth32Float_stencil8 {
+        #if os(iOS)
+        let hasStencil = depthFormat == .depth32Float_stencil8
+        #else
+        let hasStencil = depthFormat == .depth24Unorm_stencil8 || depthFormat == .depth32Float_stencil8
+        #endif
+        if hasStencil {
             renderPass.stencilAttachment.texture = depthTexture
             renderPass.stencilAttachment.loadAction = .dontCare
             renderPass.stencilAttachment.storeAction = .dontCare
@@ -1258,7 +1263,9 @@ public func metallum_configure_layer(_ layer: CAMetalLayer, _ width: Double, _ h
     layer.drawableSize = CGSize(width: width, height: height)
     layer.allowsNextDrawableTimeout = false
     layer.presentsWithTransaction = false
+    #if !os(iOS)
     layer.displaySyncEnabled = immediatePresentMode == 0
+    #endif
 }
 
 @_cdecl("metallum_MTLCommandBuffer_encodePresentTextureToDrawable")
