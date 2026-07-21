@@ -52,8 +52,32 @@ tasks.register("buildMacNative", Exec) {
 		"src/main/native/MetallumNative.swift"
 }
 
+tasks.register("buildIosNative", Exec) {
+	onlyIf {
+		org.gradle.internal.os.OperatingSystem.current().isMacOsX()
+	}
+
+	workingDir project.projectDir
+	doFirst {
+		file("src/main/resources/natives/ios").mkdirs()
+	}
+
+	commandLine "swiftc",
+		"-O",
+		"-whole-module-optimization",
+		"-emit-library",
+		"-module-name", "metallum_native",
+		"-target", "arm64-apple-ios16.0",
+		"-framework", "Foundation",
+		"-framework", "Metal",
+		"-framework", "QuartzCore",
+		"-framework", "UIKit",
+		"-o", "src/main/resources/natives/ios/libmetallum.dylib",
+		"src/main/native/MetallumNative.swift"
+}
+
 tasks.named("processResources") {
-	dependsOn(tasks.named("buildMacNative"))
+	dependsOn(tasks.named("buildMacNative"), tasks.named("buildIosNative"))
 }
 
 tasks.withType(JavaCompile).configureEach {

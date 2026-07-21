@@ -23,6 +23,15 @@ final class MetalSurface implements GpuSurfaceBackend {
     private GpuSurface.Configuration configuration;
     private MetalCommandEncoder pendingPresentEncoder;
 
+    /**
+     * Detects whether the current runtime environment is iOS.
+     * Checks {@code os.name} for "iOS" or "iPhone" substrings.
+     */
+    static boolean isIOS() {
+        final String osName = System.getProperty("os.name");
+        return osName != null && (osName.contains("iOS") || osName.contains("iPhone"));
+    }
+
     MetalSurface(final MetalDevice device, final MemorySegment metalLayer) {
         this.device = device;
         this.metalLayer = metalLayer;
@@ -34,6 +43,10 @@ final class MetalSurface implements GpuSurfaceBackend {
             throw new SurfaceException("Metal surface configuration must be positive, got " + config.width() + "x" + config.height());
         }
 
+        // iOS compatibility: metallum_configure_layer uses only CAMetalLayer and Metal APIs,
+        // which are available on both macOS and iOS. The width/height/presentMode parameters
+        // are handled identically across platforms at the native layer — no platform-specific
+        // branching is required in Java.
         MetalNativeBridge.metallum_configure_layer(
                 this.metalLayer,
                 config.width(),

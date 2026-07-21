@@ -1,5 +1,10 @@
 import Foundation
+#if os(macOS)
 import AppKit
+#endif
+#if os(iOS)
+import UIKit
+#endif
 import Metal
 import QuartzCore
 import simd
@@ -387,10 +392,17 @@ public func metallum_copy_device_name(
     }
 }
 
+#if os(macOS)
 @_cdecl("metallum_NSWindow_backingScaleFactor")
 public func metallum_NSWindow_backingScaleFactor(_ window: NSWindow) -> Double {
     Double(window.backingScaleFactor)
 }
+#elseif os(iOS)
+@_cdecl("metallum_NSWindow_backingScaleFactor")
+public func metallum_NSWindow_backingScaleFactor(_ window: UnsafeMutableRawPointer?) -> Double {
+    Double(UIScreen.main.scale)
+}
+#endif
 
 @_cdecl("metallum_create_metal_layer")
 public func metallum_create_metal_layer(
@@ -405,6 +417,7 @@ public func metallum_create_metal_layer(
     return retainedPointer(layer)
 }
 
+#if os(macOS)
 @_cdecl("metallum_NSView_setMetalLayer")
 public func metallum_NSView_setMetalLayer(
     _ view: NSView,
@@ -413,12 +426,24 @@ public func metallum_NSView_setMetalLayer(
     view.wantsLayer = true
     view.layer = layer
 }
+#elseif os(iOS)
+@_cdecl("metallum_NSView_setMetalLayer")
+public func metallum_NSView_setMetalLayer(
+    _ view: UnsafeMutableRawPointer?,
+    _ layer: UnsafeMutableRawPointer?
+) {}
+#endif
 
+#if os(macOS)
 @_cdecl("metallum_NSView_clearLayer")
 public func metallum_NSView_clearLayer(_ view: NSView) {
     view.layer = nil
     view.wantsLayer = false
 }
+#elseif os(iOS)
+@_cdecl("metallum_NSView_clearLayer")
+public func metallum_NSView_clearLayer(_ view: UnsafeMutableRawPointer?) {}
+#endif
 
 @_cdecl("metallum_set_debug_labels_enabled")
 public func metallum_set_debug_labels_enabled(_ enabled: Int32) {
