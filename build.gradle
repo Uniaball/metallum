@@ -62,7 +62,9 @@ tasks.register("buildIosNative", Exec) {
 		file("src/main/resources/natives/ios").mkdirs()
 	}
 
-	commandLine "swiftc",
+	commandLine "xcrun",
+		"--sdk", "iphoneos",
+		"swiftc",
 		"-O",
 		"-whole-module-optimization",
 		"-emit-library",
