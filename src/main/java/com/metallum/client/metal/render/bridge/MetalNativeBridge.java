@@ -25,6 +25,17 @@ public final class MetalNativeBridge {
         if (javaVendor != null && javaVendor.contains("pojav")) {
             return true;
         }
+        // PojavLauncher / Amethyst on jailbroken iOS reports os.name as "Mac OS X"
+        // and java.vendor as "Oracle Corporation", so detect via the iOS-only
+        // sandbox container path that the JVM uses for its temp/home directories.
+        String tmpDir = System.getProperty("java.io.tmpdir", "");
+        if (tmpDir.contains("/var/mobile/") || tmpDir.contains("/Containers/Data/Application/")) {
+            return true;
+        }
+        String userHome = System.getProperty("user.home", "");
+        if (userHome.contains("/var/mobile/") || userHome.contains("/Containers/Data/Application/")) {
+            return true;
+        }
         return false;
     }
     private static final ValueLayout.OfInt INT = ValueLayout.JAVA_INT;
